@@ -28,7 +28,6 @@ class Cv32e40pIrq : public Irq
 public:
     Cv32e40pIrq(Iss &iss) : Irq(iss) {}
 
-    void reset(bool active) override;
     bool mip_access(bool is_write, iss_reg_t &value) override;
     bool mie_access(bool is_write, iss_reg_t &value) override;
     bool mtvec_access(bool is_write, iss_reg_t &value) override;

@@ -34,14 +34,14 @@ public:
 
     void raise(iss_reg_t pc, int id);
 
-    /* Hook for core-specific trap vector PC masking.
-     * Default: return vec_value unchanged (generic RISC-V).
-     * CV32E40P: return vec_value & ~3 (mtvec[1:0] hardwired to 0). */
-    virtual iss_reg_t trap_vector_pc(iss_reg_t vec_value) { return vec_value; }
-
     iss_addr_t debug_handler_addr;
 
 protected:
     Iss &iss;
     vp::Trace trace;
+
+    /* Plan A config field: trap vector PC alignment mask.
+     * Default: -1 (no masking — generic RISC-V).
+     * Cv32e40pException sets it ~0x3 (mtvec[1:0] hardwired to 0). */
+    iss_reg_t trap_vector_align_mask = (iss_reg_t)-1;
 };

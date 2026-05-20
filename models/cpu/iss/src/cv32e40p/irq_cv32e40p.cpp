@@ -24,21 +24,6 @@
 #include <vp/vp.hpp>
 #include <cpu/iss/include/iss.hpp>
 
-void Cv32e40pIrq::reset(bool active)
-{
-    if (active)
-    {
-        this->irq_enable.set(0);
-        this->req_irq = -1;
-        this->req_debug = false;
-        this->debug_handler = this->iss.exception.debug_handler_addr;
-    }
-    /* On deassert: skip mtvec_set/stvec_set.
-     * CV32E40P mtvec is initialized by Cv32e40pCsr::build_cv32e40p()
-     * and overridden by rvviRefCsrSet at boot. Boot address 0x80 & ~0xFF == 0,
-     * which would corrupt mtvec. */
-}
-
 void Cv32e40pIrq::register_csr_callbacks()
 {
     this->iss.csr.mip.register_callback(std::bind(&Cv32e40pIrq::mip_access, this, std::placeholders::_1, std::placeholders::_2));

@@ -60,7 +60,7 @@ public:
     bool stvec_set(iss_addr_t base);
     inline void global_enable(int enable);
     void cache_flush();
-    virtual void reset(bool active);
+    void reset(bool active);
     int check();
     void wfi_handle();
     virtual void elw_irq_unstall();

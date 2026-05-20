@@ -29,11 +29,6 @@ public:
     Cv32e40pCore(Iss &iss) : Core(iss) {}
 
 protected:
-    /* CV32E40P RTL does NOT clear mcause/scause on mret/sret (D21 fix).
-     * Override hooks with empty bodies to suppress the generic clearing. */
-    void post_mret_hook() override {}
-    void post_sret_hook() override {}
-
     /* Plan A: CV32E40P is M-mode only (PULP_SECURE=0 in RTL).
      * RTL always sets priv_lvl_n = PRIV_LVL_M on MRET regardless of MPP
      * (cv32e40p_cs_registers.sv:1069).  CSR writes can set MPP to 0, but

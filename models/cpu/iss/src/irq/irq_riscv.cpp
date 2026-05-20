@@ -76,8 +76,13 @@ void Irq::reset(bool active)
     }
     else
     {
+#ifndef CONFIG_GVSOC_ISS_CV32E40P
+        // CV32E40P skips this: its mtvec is set by Cv32e40pCsr::build_cv32e40p()
+        // and overridden by rvviRefCsrSet at boot. Boot address 0x80 & ~0xFF == 0
+        // would corrupt the RTL-mandated mtvec value.
         this->mtvec_set(this->iss.exec.bootaddr_reg.get() & ~((1 << 8) - 1));
         this->stvec_set(this->iss.exec.bootaddr_reg.get() & ~((1 << 8) - 1));
+#endif
     }
 }
 

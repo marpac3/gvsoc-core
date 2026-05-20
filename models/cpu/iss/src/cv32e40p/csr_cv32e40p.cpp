@@ -88,9 +88,6 @@ void Cv32e40pCsr::build_cv32e40p()
     // Plan A: base Csr now declares tinfo unconditionally (no undeclare+redeclare needed).
     // reset_val and write_mask set below in this method.
 
-    // CV32E40P-specific minstret access semantics (BUG-26: stub auto-increment).
-    this->minstret.register_callback(std::bind(&Cv32e40pCsr::minstret_access, this, std::placeholders::_1, std::placeholders::_2));
-
     auto *cfg = this->iss.top.get_js_config();
 
     // D54: PULP custom CSRs (0xCD0-0xCD2) — cv32e40p_cs_registers.sv
@@ -167,6 +164,8 @@ void Cv32e40pCsr::build_cv32e40p()
     this->tselect.reset_val = 0;
     this->tselect.value     = 0;
     this->tselect.set_write_mask(0);  // read-only: writes ignored, always reads 0
+    // Plan A: tselect reads always return reset_val (0) — D34.
+    this->tselect_default_read = this->tselect.reset_val;
 
     // D25: tdata1 — type=2 (mcontrol), dmode=1, action=1, match=0, m=1
     this->tdata1.reset_val = cfg_int_or(cfg, "tdata1_reset", 0x28001040);
@@ -249,6 +248,14 @@ void Cv32e40pCsr::build_cv32e40p()
         this->mhpmevent[i].set_write_mask((i < num_hpm) ? evt_mask : 0);
     }
 
+    // Plan A: behavioral-policy config fields (formerly virtual hooks).
+    // CV32E40P raises illegal-instruction on access to undeclared CSRs
+    // (RISC-V privileged spec strict mode); generic GVSOC just warns.
+    this->raise_on_unsupported_csr_flag = true;
+    // CV32E40P bootaddr does NOT write mtvec — it is set by Csr::build()
+    // (reset_val=0x1, vectored mode) and rvviRefCsrSet.
+    this->bootaddr_writes_mtvec_flag = false;
+
     // D28: dcsr — build() runs after reset(), so apply dcsr M-mode here too
     this->dcsr = (4 << 28) | 0x3;
 }
@@ -299,25 +306,11 @@ bool Cv32e40pCsr::mstatus_access(bool is_write, iss_reg_t &value)
     return true;
 }
 
-bool Cv32e40pCsr::minstret_access(bool is_write, iss_reg_t &value)
-{
-    // BUG-26 OPEN: minstret doesn't auto-increment like RTL.
-    // Marked volatile in StepNCompare, so not compared.
-    return true;  // let default read/write proceed
-}
-
 bool Cv32e40pCsr::fp_access_illegal()
 {
     // CV32E40P RTL (cv32e40p_cs_registers.sv): FP CSR (fflags/frm/fcsr) access
     // raises illegal-instruction when mstatus[FS] == 00 (FS_OFF).
     return ((this->mstatus.value >> 13) & 3) == 0;
-}
-
-iss_reg_t Cv32e40pCsr::tselect_default_read_value()
-{
-    // D34: CV32E40P has exactly 1 trigger; tselect hardwired to 0.
-    // RTL reads always return reset_val (0) regardless of write attempts.
-    return this->tselect.reset_val;
 }
 
 int Cv32e40pCsr::hwloop_csr_index(iss_reg_t reg)
@@ -345,11 +338,6 @@ const char *Cv32e40pCsr::custom_csr_name(iss_reg_t reg)
         case 0xCC6: return "lpcount1";
         default:    return nullptr;  // fall through to base/generic
     }
-}
-
-bool Cv32e40pCsr::mcountinhibit_access(bool is_write, iss_reg_t &value)
-{
-    return true;  // placeholder
 }
 
 bool Cv32e40pCsr::mcycle_access(bool is_write, iss_reg_t &value)

@@ -220,7 +220,6 @@ public:
 
     // Plan A: declared unconditionally so Csr::build() can declare them
     // without #ifdef.  Core-specific callbacks/init in subclass build_*().
-    // Memory cost for non-CV32E40P: ~7 * sizeof(CsrReg) ≈ few hundred bytes.
 #if ISS_REG_WIDTH == 32
     CsrReg mcycleh;
     CsrReg minstreth;
@@ -280,15 +279,15 @@ public:
      * Called from static fflags/frm/fcsr read/write to detect illegal access. */
     virtual bool fp_access_illegal() { return false; }
 
-    /* Plan A hook: default tselect read value (when no trigger selected).
-     * Default: -1 (all-1s, conventional "no trigger" sentinel).
-     * Cv32e40pCsr overrides: returns tselect.reset_val (hardwired 0 per RTL). */
-    virtual iss_reg_t tselect_default_read_value() { return (iss_reg_t)-1; }
+    /* Plan A config field: default tselect read value (when no trigger
+     * selected). Default: -1 (all-1s, conventional "no trigger" sentinel).
+     * Cv32e40pCsr::build_cv32e40p() sets it to tselect.reset_val (0 per RTL). */
+    iss_reg_t tselect_default_read = (iss_reg_t)-1;
 
-    /* Plan A hook: behavior on access to an undeclared/unsupported CSR.
-     * Default: log warning, no exception (legacy GVSOC behavior).
-     * Cv32e40pCsr overrides: raise illegal-instruction (RISC-V spec strict). */
-    virtual bool raise_on_unsupported_csr() { return false; }
+    /* Plan A config field: behavior on access to an undeclared/unsupported
+     * CSR. Default: false → log warning, no exception (legacy GVSOC behavior).
+     * Cv32e40pCsr::build_cv32e40p() sets it true (RISC-V spec strict). */
+    bool raise_on_unsupported_csr_flag = false;
 
     /* Plan A hook: map a CSR address to its core-specific HWLOOP register index.
      * Default: -1 (not a HWLOOP CSR).
@@ -302,13 +301,12 @@ public:
      * Cv32e40pCsr overrides: 0xCC0..0xCC6 → "lpstart0"/"lpend0"/.../"lpcount1". */
     virtual const char *custom_csr_name(iss_reg_t reg) { return nullptr; }
 
-    /* Plan A hook: whether Exec::bootaddr_apply should derive mtvec from
-     * boot address.
-     * Default: true (generic RISC-V derives mtvec = bootaddr & ~0xFF).
-     * Cv32e40pCsr overrides: false — mtvec is set by Csr::build()
-     * (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr derivation
-     * would corrupt the RTL-mandated value. */
-    virtual bool bootaddr_writes_mtvec() { return true; }
+    /* Plan A config field: whether Exec::bootaddr_apply derives mtvec from
+     * boot address. Default: true (generic RISC-V: mtvec = bootaddr & ~0xFF).
+     * Cv32e40pCsr::build_cv32e40p() sets it false — mtvec is set by
+     * Csr::build() (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr
+     * derivation would corrupt the RTL-mandated value. */
+    bool bootaddr_writes_mtvec_flag = true;
 
     /* Plan A hook: EBREAK in M-mode behavior.
      * Default: false → raise ISS_EXCEPT_BREAKPOINT (generic RISC-V w/o debug).
@@ -318,7 +316,6 @@ public:
 
 protected:
     virtual bool mstatus_access(bool is_write, iss_reg_t &value);
-    virtual bool minstret_access(bool is_write, iss_reg_t &value);
     virtual bool mcycle_access(bool is_write, iss_reg_t &value);
     void undeclare_csr(iss_reg_t address) { regs.erase(address); }
 

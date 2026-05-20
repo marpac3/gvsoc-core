@@ -123,7 +123,10 @@ iss_reg_t Core::mret_handle()
     this->iss.irq.irq_enable.set(this->iss.csr.mstatus.mpie);
     this->iss.csr.mstatus.mie = this->iss.csr.mstatus.mpie;
     this->iss.csr.mstatus.mpie = 1;
-    this->post_mret_hook();
+#ifndef CONFIG_GVSOC_ISS_CV32E40P
+    // Generic RISC-V clears mcause after MRET; CV32E40P RTL does not (D21).
+    this->iss.csr.mcause.value = 0;
+#endif
 
     return this->iss.csr.mepc.value;
 }
@@ -143,7 +146,10 @@ iss_reg_t Core::sret_handle()
     this->iss.irq.irq_enable.set(this->iss.csr.mstatus.spie);
     this->iss.csr.mstatus.sie = this->iss.csr.mstatus.spie;
     this->iss.csr.mstatus.spie = 1;
-    this->post_sret_hook();
+#ifndef CONFIG_GVSOC_ISS_CV32E40P
+    // Generic RISC-V clears scause after SRET; CV32E40P RTL does not (D21).
+    this->iss.csr.scause.value = 0;
+#endif
 
     return this->iss.csr.sepc.value;
 }
@@ -207,16 +213,6 @@ bool Core::sstatus_update(bool is_write, iss_reg_t &value)
     }
 
     return false;
-}
-
-void Core::post_mret_hook()
-{
-    this->iss.csr.mcause.value = 0;
-}
-
-void Core::post_sret_hook()
-{
-    this->iss.csr.scause.value = 0;
 }
 
 void Core::mode_set(int mode)

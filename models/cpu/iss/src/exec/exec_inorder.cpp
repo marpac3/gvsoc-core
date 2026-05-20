@@ -447,12 +447,12 @@ void Exec::fetchen_sync(vp::Block *__this, bool active)
 void Exec::bootaddr_apply(uint32_t value)
 {
     this->trace.msg("Setting boot address (value: 0x%x)\n", value);
-    // Plan A hook: derive mtvec from bootaddr when supported.
+    // Plan A config field: derive mtvec from bootaddr when supported.
     // Default (generic RISC-V): true → mtvec = bootaddr & ~0xFF.
-    // Cv32e40pCsr overrides to false: mtvec is set by Csr::build()
-    // (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr 0x80 & ~0xFF
-    // = 0x0 would corrupt the RTL-mandated value.
-    if (this->iss.csr.bootaddr_writes_mtvec())
+    // CV32E40P sets it false: mtvec is set by Csr::build() (reset_val=0x1,
+    // vectored mode) and rvviRefCsrSet; bootaddr 0x80 & ~0xFF = 0x0 would
+    // corrupt the RTL-mandated value.
+    if (this->iss.csr.bootaddr_writes_mtvec_flag)
     {
         iss_reg_t bootaddr = this->bootaddr_reg.get() & ~((1 << 8) - 1);
         this->iss.csr.mtvec.access(true, bootaddr);

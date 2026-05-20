@@ -26,12 +26,10 @@
 class Cv32e40pException : public Exception
 {
 public:
-    Cv32e40pException(Iss &iss) : Exception(iss) {}
-
-    /* CV32E40P always aligns the trap vector to 4 bytes.
-     * This matches RTL behavior where mtvec[1:0] are hardwired to 0. */
-    iss_reg_t trap_vector_pc(iss_reg_t vec_value) override
+    /* CV32E40P always aligns the trap vector to 4 bytes — RTL hardwires
+     * mtvec[1:0] to 0. Set the base-class alignment mask accordingly. */
+    Cv32e40pException(Iss &iss) : Exception(iss)
     {
-        return vec_value & ~(iss_reg_t)0x3;
+        this->trap_vector_align_mask = ~(iss_reg_t)0x3;
     }
 };

@@ -33,7 +33,6 @@ public:
     void reset(bool active);
 
     bool mstatus_access(bool is_write, iss_reg_t &value) override;
-    bool minstret_access(bool is_write, iss_reg_t &value) override;
     bool mcycle_access(bool is_write, iss_reg_t &value) override;
     void mstatus_read_fixup(iss_reg_t &value) override;
 
@@ -41,13 +40,6 @@ public:
     // Returns true (illegal) when mstatus[FS] == 00 (Off) — CV32E40P RTL
     // raises illegal-instruction on FP CSR access while FS=Off.
     bool fp_access_illegal() override;
-
-    // Plan A: tselect default read value — returns tselect.reset_val (0 per RTL).
-    iss_reg_t tselect_default_read_value() override;
-
-    // Plan A: CV32E40P raises illegal-instruction on access to undeclared CSRs
-    // (RISC-V privileged spec strict mode). Other cores just warn.
-    bool raise_on_unsupported_csr() override { return true; }
 
     // Plan A: CoreV2 HWLOOP CSR mapping.
     //   0xCC0..0xCC2 → 0..2  (lpstart0/lpend0/lpcount0)
@@ -57,11 +49,6 @@ public:
 
     // Plan A: CoreV2 HWLOOP CSR names for trace messages.
     const char *custom_csr_name(iss_reg_t reg) override;
-
-    // Plan A: CV32E40P bootaddr does NOT write mtvec.
-    // mtvec is set by Csr::build() (reset_val=0x1, vectored mode) and
-    // rvviRefCsrSet; bootaddr 0x80 & ~0xFF = 0x0 would corrupt the value.
-    bool bootaddr_writes_mtvec() override { return false; }
 
     // Plan A: EBREAK in M-mode enters debug when dcsr.ebreakm=1.
     // RISC-V Debug Spec §3.1.2 — bit 15 of dcsr is ebreakm.
@@ -74,8 +61,6 @@ public:
     CsrReg zfinx_csr;   // 0xCD2 — ZFINX indicator (1 if FPU+ZFINX, else 0)
 
 private:
-    bool mcountinhibit_access(bool is_write, iss_reg_t &value);
-
     int64_t mcycle_offset = 0;
     bool m_fpu_in_isa = false;
     bool m_zfinx = false;

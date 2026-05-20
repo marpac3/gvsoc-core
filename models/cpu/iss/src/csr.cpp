@@ -75,7 +75,7 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->tdata3,   "tdata3",       0x7A3);
     // Plan A: tinfo/mcontext/scontext/minstret/mcycleh/minstreth declared
     // unconditionally — harmless for cores that don't use them. Core-specific
-    // callback registration (e.g. minstret_access for CV32E40P) lives in the
+    // callback registration (e.g. mstatus_access for CV32E40P) lives in the
     // core's CSR subclass build_*() (see Cv32e40pCsr::build_cv32e40p).
     this->declare_csr(&this->tinfo,    "tinfo",        0x7A4);
     this->declare_csr(&this->mcontext, "mcontext",     0x7A8);
@@ -251,8 +251,8 @@ bool Csr::tselect_access(bool is_write, iss_reg_t &value)
 {
     if (!is_write)
     {
-        // Plan A: virtual hook — base returns -1, Cv32e40pCsr returns reset_val.
-        value = this->tselect_default_read_value();
+        // Plan A config field — base default -1, CV32E40P sets it to reset_val.
+        value = this->tselect_default_read;
     }
     return false;
 }
@@ -266,11 +266,6 @@ bool Csr::time_access(bool is_write, iss_reg_t &value)
 }
 
 bool Csr::mstatus_access(bool is_write, iss_reg_t &value)
-{
-    return true;
-}
-
-bool Csr::minstret_access(bool is_write, iss_reg_t &value)
 {
     return true;
 }
@@ -1339,8 +1334,8 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
 
         if (status)
         {
-            // Plan A: virtual hook decides exception vs warning per core.
-            if (iss->csr.raise_on_unsupported_csr())
+            // Plan A config field decides exception vs warning per core.
+            if (iss->csr.raise_on_unsupported_csr_flag)
             {
                 iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR read (id: 0x%x) -> illegal instruction\n", reg);
                 iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
@@ -1489,8 +1484,8 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
         return hwloop_write(iss, reg - CSR_HWLOOP0_START, value);
 #endif
 
-    // Plan A: virtual hook decides exception vs warning per core.
-    if (iss->csr.raise_on_unsupported_csr())
+    // Plan A config field decides exception vs warning per core.
+    if (iss->csr.raise_on_unsupported_csr_flag)
     {
         iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR write (id: 0x%x) -> illegal instruction\n", reg);
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);

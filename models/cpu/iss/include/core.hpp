@@ -43,12 +43,6 @@ public:
 
     int mode_get() { return this->mode; }
 
-    /* Hooks called after mret/sret restores state.
-     * Default: clear mcause/scause (generic RISC-V).
-     * CV32E40P: override with empty body (RTL does not clear on xret). */
-    virtual void post_mret_hook();
-    virtual void post_sret_hook();
-
     /* Plan A hook: privilege-mode restore on MRET.
      * Default: from mstatus.mpp (generic RISC-V).
      * Cv32e40pCore overrides: force PRIV_M (RTL PULP_SECURE=0, M-mode only). */

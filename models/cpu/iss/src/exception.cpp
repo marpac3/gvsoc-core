@@ -80,12 +80,12 @@ void Exception::raise(iss_reg_t pc, int id)
 #ifdef CONFIG_GVSOC_ISS_RISCV_EXCEPTIONS
         if (next_mode == PRIV_M)
         {
-            pc = this->iss.exception.trap_vector_pc(this->iss.csr.mtvec.value);
+            pc = this->iss.csr.mtvec.value & this->trap_vector_align_mask;
             this->iss.csr.mcause.value = id;
         }
         else
         {
-            pc = this->iss.exception.trap_vector_pc(this->iss.csr.stvec.value);
+            pc = this->iss.csr.stvec.value & this->trap_vector_align_mask;
             this->iss.csr.scause.value = id;
         }
 #else
