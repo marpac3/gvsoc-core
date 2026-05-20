@@ -1079,10 +1079,20 @@ static inline void hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg
 }
 #endif
 
+// CV32E40P CoreV2 codifica l'immediate degli hwloop "immediate" come word
+// offset (x4) -- RTL cv32e40p_id_stage.sv:1366 `pc + (imm_iz_type << 2)` e
+// cv32e40p_hwloop_regs.sv:71,83 forzano 4-byte align. Il default legacy
+// PulpV2 era halfword (x2). Behavior-preserving per non-CV32E40P (macro=1).
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+#define COREV_HWLOOP_IMM_SHIFT 2
+#else
+#define COREV_HWLOOP_IMM_SHIFT 1
+#endif
+
 static inline iss_reg_t lp_starti_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
 #ifndef CONFIG_GVSOC_ISS_V2
-    hwloop_set_start(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << 1));
+    hwloop_set_start(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT));
 #endif
     return iss_insn_next(iss, insn, pc);
 }
@@ -1090,7 +1100,7 @@ static inline iss_reg_t lp_starti_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 static inline iss_reg_t lp_endi_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
 #ifndef CONFIG_GVSOC_ISS_V2
-    hwloop_set_end(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << 1));
+    hwloop_set_end(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT));
 #endif
     return iss_insn_next(iss, insn, pc);
 }
@@ -1121,7 +1131,7 @@ static inline iss_reg_t lp_setup_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     int index = UIM_GET(0);
     iss_reg_t count = REG_GET(0);
     iss_reg_t start = pc + insn->size;
-    iss_reg_t end = pc + (UIM_GET(1) << 1);
+    iss_reg_t end = pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT);
 
     hwloop_set_all(iss, insn, index, start, end, count);
 #endif
@@ -1135,7 +1145,7 @@ static inline iss_reg_t lp_setupi_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     int index = UIM_GET(0);
     iss_reg_t count = UIM_GET(1);
     iss_reg_t start = pc + insn->size;
-    iss_reg_t end = pc + (UIM_GET(2) << 1);
+    iss_reg_t end = pc + (UIM_GET(2) << COREV_HWLOOP_IMM_SHIFT);
 
     hwloop_set_all(iss, insn, index, start, end, count);
 #endif
