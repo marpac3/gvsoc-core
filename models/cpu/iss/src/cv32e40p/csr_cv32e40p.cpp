@@ -199,7 +199,7 @@ void Cv32e40pCsr::build_cv32e40p()
     this->mhartid.reset_val = cfg_int_or(cfg, "mhartid_value", 0x00000000);
     this->mhartid.value     = this->mhartid.reset_val;
 
-    // BUG-29b: mimpid from JSON config (RTL: FPU||COREV_PULP||COREV_CLUSTER ? 1 : 0)
+    // mimpid from JSON config (RTL: FPU||COREV_PULP||COREV_CLUSTER ? 1 : 0)
     this->mimpid.value = (iss_reg_t)cfg_int_or(cfg, "mimpid", 0);
     this->mimpid.reset_val = this->mimpid.value;
 

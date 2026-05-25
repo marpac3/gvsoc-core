@@ -1479,7 +1479,7 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
         return hwloop_write(iss, reg - CSR_HWLOOP0_START, value);
 #endif
 
-    // Plan A config field decides exception vs warning per core.
+    // Config field decides exception vs warning per target.
     if (iss->csr.raise_on_unsupported_csr_flag)
     {
         iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR write (id: 0x%x) -> illegal instruction\n", reg);
