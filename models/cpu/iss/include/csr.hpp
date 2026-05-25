@@ -218,8 +218,8 @@ public:
 #endif
     CsrReg mcountinhibit;
 
-    // CV32E40P-only CSRs (kept out of base to preserve upstream behavior
-    // for other cores: access falls through to "unsupported CSR" warning).
+    // Optional extension CSRs (guarded by CONFIG_GVSOC_ISS_CV32E40P below).
+    // When the config is off, access falls through to the "unsupported CSR" warning.
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
 #if ISS_REG_WIDTH == 32
     CsrReg mcycleh;
@@ -275,49 +275,42 @@ public:
      * Called by Core::mstatus_update on read path. Default: no-op. */
     virtual void mstatus_read_fixup(iss_reg_t &value) {}
 
-    /* Plan A hook: FP/Vector CSR access pre-check.
+    /* FP/Vector CSR access pre-check.
      * Default: allow (returns false → not illegal).
-     * Cv32e40pCsr overrides: returns true when mstatus[FS]==00 (Off).
      * Called from static fflags/frm/fcsr read/write to detect illegal access. */
     virtual bool fp_access_illegal() { return false; }
 
-    /* Plan A config field: default tselect read value (when no trigger
-     * selected). Default: -1 (all-1s, conventional "no trigger" sentinel).
-     * Cv32e40pCsr::build_cv32e40p() sets it to tselect.reset_val (0 per RTL). */
+    /* Default tselect read value when no trigger is selected.
+     * Default: -1 (all-1s, conventional "no trigger" sentinel). */
     iss_reg_t tselect_default_read = (iss_reg_t)-1;
 
-    /* Plan A config field: behavior on access to an undeclared/unsupported
-     * CSR. Default: false → log warning, no exception (legacy GVSOC behavior).
-     * Cv32e40pCsr::build_cv32e40p() sets it true (RISC-V spec strict). */
+    /* Behavior on access to an undeclared/unsupported CSR.
+     * Default: false → log warning, no exception (legacy GVSOC behavior). */
     bool raise_on_unsupported_csr_flag = false;
 
-    /* Plan A hook: map a CSR address to its core-specific HWLOOP register index.
+    /* Map a CSR address to its core-specific HWLOOP register index.
      * Default: -1 (not a HWLOOP CSR).
-     * Cv32e40pCsr overrides: 0xCC0..0xCC2 → 0..2, 0xCC4..0xCC6 → 4..6 (CoreV2 mapping).
-     * Used by iss_csr_read (dispatch to hwloop_read) and iss_csr_write
-     * (CV32E40P raises illegal — HWLOOP CSRs are read-only via CSR insn). */
+     * Used by iss_csr_read (dispatch to hwloop_read) and iss_csr_write. */
     virtual int hwloop_csr_index(iss_reg_t reg) { return -1; }
 
-    /* Plan A hook: core-specific CSR name lookup for trace messages.
-     * Default: nullptr (fall through to generic table).
-     * Cv32e40pCsr overrides: 0xCC0..0xCC6 → "lpstart0"/"lpend0"/.../"lpcount1". */
+    /* Core-specific CSR name lookup for trace messages.
+     * Default: nullptr (fall through to generic table). */
     virtual const char *custom_csr_name(iss_reg_t reg) { return nullptr; }
 
-    /* Plan A config field: whether Exec::bootaddr_apply derives mtvec from
-     * boot address. Default: true (generic RISC-V: mtvec = bootaddr & ~0xFF).
-     * Cv32e40pCsr::build_cv32e40p() sets it false — mtvec is set by
-     * Csr::build() (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr
-     * derivation would corrupt the RTL-mandated value. */
+    /* Whether Exec::bootaddr_apply derives mtvec from boot address.
+     * Default: true (generic RISC-V: mtvec = bootaddr & ~0xFF). */
     bool bootaddr_writes_mtvec_flag = true;
 
-    /* Plan A hook: EBREAK in M-mode behavior.
-     * Default: false → raise ISS_EXCEPT_BREAKPOINT (generic RISC-V w/o debug).
-     * Cv32e40pCsr overrides: true when dcsr.ebreakm=1, enter debug mode
-     * (RISC-V Debug Spec §3.1.2). */
+    /* EBREAK in M-mode behavior.
+     * Default: false → raise ISS_EXCEPT_BREAKPOINT (generic RISC-V w/o debug). */
     virtual bool ebreak_m_mode_enters_debug() { return false; }
 
 protected:
+    /* mstatus access hook.
+     * Default: pass through (return true). */
     virtual bool mstatus_access(bool is_write, iss_reg_t &value);
+    /* mcycle access hook.
+     * Default: on read, return current clock cycle count; on write, no-op. */
     virtual bool mcycle_access(bool is_write, iss_reg_t &value);
     void undeclare_csr(iss_reg_t address) { regs.erase(address); }
 

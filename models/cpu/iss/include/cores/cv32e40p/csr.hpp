@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +17,7 @@
  */
 
 /*
- * Authors: Marco Paci, Chips-it (marco.paci@chips.it)
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 #pragma once
@@ -36,23 +37,22 @@ public:
     bool mcycle_access(bool is_write, iss_reg_t &value) override;
     void mstatus_read_fixup(iss_reg_t &value) override;
 
-    // Plan A: FP/Vector CSR access pre-check.
-    // Returns true (illegal) when mstatus[FS] == 00 (Off) — CV32E40P RTL
+    // FP/Vector CSR access pre-check.
+    // Returns true (illegal) when mstatus[FS] == 00 (Off)
     // raises illegal-instruction on FP CSR access while FS=Off.
     bool fp_access_illegal() override;
 
-    // Plan A: CoreV2 HWLOOP CSR mapping.
+    // CoreV2 HWLOOP CSR mapping.
     //   0xCC0..0xCC2 → 0..2  (lpstart0/lpend0/lpcount0)
     //   0xCC4..0xCC6 → 4..6  (lpstart1/lpend1/lpcount1)
     //   gap at 0xCC3 / outside range → -1.
     int hwloop_csr_index(iss_reg_t reg) override;
 
-    // Plan A: CoreV2 HWLOOP CSR names for trace messages.
+    // CoreV2 HWLOOP CSR names for trace messages.
     const char *custom_csr_name(iss_reg_t reg) override;
 
-    // Plan A: EBREAK in M-mode enters debug when dcsr.ebreakm=1.
+    // EBREAK in M-mode enters debug when dcsr.ebreakm=1.
     // RISC-V Debug Spec §3.1.2 — bit 15 of dcsr is ebreakm.
-    // Impl out-of-line in csr_cv32e40p.cpp (needs complete Iss type).
     bool ebreak_m_mode_enters_debug() override;
 
     // PULP custom CSRs (0xCD0-0xCD2)

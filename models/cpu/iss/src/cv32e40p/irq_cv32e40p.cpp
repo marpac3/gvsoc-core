@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +17,7 @@
  */
 
 /*
- * Authors: Marco Paci, Chips-it (marco.paci@chips.it)
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
@@ -85,17 +86,16 @@ void Cv32e40pIrq::elw_irq_unstall()
     this->iss.exec.busy_enter();
 }
 
-// Plan A: pre-fetch IRQ check in fast handler.
-// Matches RTL combinatorial decode-stage IRQ timing: check interrupts BEFORE
-// fetching the next instruction so mepc captures the PC of the instruction
-// about to execute.  Returns true if IRQ taken (caller should early-return).
+// pre-fetch IRQ check in fast handler.
+// check interrupts BEFORE fetching the next instruction 
+// Returns true if IRQ taken (caller should early-return).
 bool Cv32e40pIrq::check_pre_fetch_fast()
 {
     return this->check() != 0;
 }
 
-// Plan A: post-instruction IRQ check in slow handler (exec_instr_check_all).
-// WP-C: same RTL timing requirement as fast handler — early-return on IRQ
+// post-instruction IRQ check in slow handler (exec_instr_check_all).
+// same RTL timing requirement as fast handler — early-return on IRQ
 // taken to defer next-instruction fetch to next cycle.
 bool Cv32e40pIrq::check_post_instr_slow()
 {

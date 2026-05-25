@@ -40,8 +40,7 @@ protected:
     Iss &iss;
     vp::Trace trace;
 
-    /* Plan A config field: trap vector PC alignment mask.
-     * Default: -1 (no masking — generic RISC-V).
-     * Cv32e40pException sets it ~0x3 (mtvec[1:0] hardwired to 0). */
+    /* Trap vector PC alignment mask.
+     * Default: -1 (no masking — generic RISC-V). */
     iss_reg_t trap_vector_align_mask = (iss_reg_t)-1;
 };

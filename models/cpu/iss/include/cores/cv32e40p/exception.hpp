@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +17,7 @@
  */
 
 /*
- * Authors: Marco Paci, Chips-it (marco.paci@chips.it)
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 #pragma once
@@ -26,8 +27,8 @@
 class Cv32e40pException : public Exception
 {
 public:
-    /* CV32E40P always aligns the trap vector to 4 bytes — RTL hardwires
-     * mtvec[1:0] to 0. Set the base-class alignment mask accordingly. */
+    /* CV32E40P always aligns the trap vector to 4 bytes
+    set base-class alignment mask accordingly. */
     Cv32e40pException(Iss &iss) : Exception(iss)
     {
         this->trap_vector_align_mask = ~(iss_reg_t)0x3;

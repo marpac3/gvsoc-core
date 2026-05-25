@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,10 +19,8 @@
 /*
  * CV32E40P-specific CSR subclass implementation.
  *
- * This file is compiled for every ISS target but all code is guarded by
- * CONFIG_GVSOC_ISS_CV32E40P so it compiles to nothing for other cores.
  *
- * Authors: Marco Paci, Chips-it (marco.paci@chips.it)
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
@@ -57,7 +56,6 @@ void Cv32e40pCsr::build_cv32e40p()
     this->m_fpu_in_isa = this->iss.top.get_js_config()->get_child_bool("fpu_in_isa");
     this->m_zfinx = this->iss.top.get_js_config()->get_child_bool("zfinx");
 
-    // Plan A migration (from csr.cpp #ifdef CV32E40P at original line 54):
     // CV32E40P mstatus access callback — forces MPP=M on reads, lets writes
     // proceed via Cv32e40pCsr::mstatus_access() override.
     this->mstatus.register_callback(std::bind(&Cv32e40pCsr::mstatus_access, this, std::placeholders::_1, std::placeholders::_2));
@@ -84,18 +82,18 @@ void Cv32e40pCsr::build_cv32e40p()
             "mhpmevent" + std::to_string(i + 3), 0x323 + i);
     }
 
-    // D29: tinfo register — CV32E40P trigger info (read-only, value=0x4)
-    // Plan A: base Csr now declares tinfo unconditionally (no undeclare+redeclare needed).
+    // tinfo register — CV32E40P trigger info (read-only, value=0x4)
+    // base Csr now declares tinfo unconditionally (no undeclare+redeclare needed).
     // reset_val and write_mask set below in this method.
 
     auto *cfg = this->iss.top.get_js_config();
 
-    // D54: PULP custom CSRs (0xCD0-0xCD2) — cv32e40p_cs_registers.sv
+    // PULP custom CSRs (0xCD0-0xCD2)
     // These exist when COREV_PULP=1 (all PULP configs). Read-only via CSR instructions.
     bool pulpv2 = cfg->get_child_bool("pulpv2");
     if (pulpv2)
     {
-        // D54: PULP custom CSRs — reset_val MUST be passed to declare_csr()
+        // PULP custom CSRs — reset_val MUST be passed to declare_csr()
         // because Csr::reset() runs AFTER build() and overwrites .value with
         // reset_val (default 0). Values set only via .value are clobbered.
 
@@ -121,17 +119,16 @@ void Cv32e40pCsr::build_cv32e40p()
     this->mhartid.write_illegal = true;
 
     // ----------------------------------------------------------------
-    // CSR write masks — values from CV32E40P RTL (cv32e40p_cs_registers.sv)
+    // CSR write masks — values from CV32E40P RTL
     // Config Python values are used if present; fallback to RTL-derived
     // constants if config key returns 0 (missing).
     // ----------------------------------------------------------------
 
-    // D62: mstatus effective write mask — matches RTL always_ff forcing.
-    // CV32E40P PULP_SECURE=0: always_ff forces MPP=M, MPRV=0, UIE=0, UPIE=0.
+    // mstatus effective write mask.
+    // CV32E40P forces MPP=M, MPRV=0, UIE=0, UPIE=0.
     // Only MIE(3) + MPIE(7) are truly writable. With FPU: add FS(14:13).
-    // (cv32e40p_cs_registers.sv:1222-1230)
-    // Reset is ALWAYS 0x1800 (FS=Off) — RTL sets mstatus_fs_q=FS_OFF at reset
-    // even when FPU=1 (cv32e40p_cs_registers.sv:1178). FS transitions to Dirty
+    // Reset is ALWAYS 0x1800 (FS=Off)
+    // even when FPU=1. FS transitions to Dirty
     // only when FPU registers are written, not at reset.
     iss_reg_t mstatus_wmask_dflt = this->m_fpu_in_isa ? 0x6088 : 0x0088;
     iss_reg_t mstatus_reset = 0x00001800;  // MPP=M, FS=Off for ALL configs
@@ -139,19 +136,18 @@ void Cv32e40pCsr::build_cv32e40p()
     this->mstatus.reset_val = mstatus_reset;
     this->mstatus.value     = mstatus_reset;
 
-    // D27: mie — only IRQ_MASK bits writable (cv32e40p_pkg.sv:725)
+    // mie — only IRQ_MASK bits writable
     this->mie.set_write_mask(cfg_int_or(cfg, "mie_write_mask", 0xFFFF0888));
 
     // mip — read-only in M-mode
     this->mip.set_write_mask(0);
 
-    // D26: mtvec — bits[7:1] hardwired to 0
+    // mtvec — bits[7:1] hardwired to 0
     this->mtvec.set_write_mask(cfg_int_or(cfg, "mtvec_write_mask", 0xFFFFFF01));
     this->mtvec.reset_val = cfg_int_or(cfg, "mtvec_reset", 0x1);
     this->mtvec.value     = this->mtvec.reset_val;  // build() runs AFTER reset()
 
-    // D58: mtval — CV32E40P hardwires mtval to 0 (not writable)
-    // RTL: cv32e40p_cs_registers.sv never assigns mtval_n on CSR write
+    // mtval — CV32E40P hardwires mtval to 0 (not writable)
     this->mtval.set_write_mask(cfg_int_or(cfg, "mtval_write_mask", 0x00000000));
 
     // mcause — bit[31] (interrupt) + bits[4:0] (exception code)
@@ -160,30 +156,30 @@ void Cv32e40pCsr::build_cv32e40p()
     // ----------------------------------------------------------------
     // Trigger module CSRs
     // ----------------------------------------------------------------
-    // D34: tselect — CV32E40P has exactly 1 trigger, tselect hardwired to 0
+    // tselect — CV32E40P has exactly 1 trigger, tselect hardwired to 0
     this->tselect.reset_val = 0;
     this->tselect.value     = 0;
     this->tselect.set_write_mask(0);  // read-only: writes ignored, always reads 0
-    // Plan A: tselect reads always return reset_val (0) — D34.
+    // tselect reads always return reset_val (0).
     this->tselect_default_read = this->tselect.reset_val;
 
-    // D25: tdata1 — type=2 (mcontrol), dmode=1, action=1, match=0, m=1
+    // tdata1 — type=2 (mcontrol), dmode=1, action=1, match=0, m=1
     this->tdata1.reset_val = cfg_int_or(cfg, "tdata1_reset", 0x28001040);
     this->tdata1.value     = this->tdata1.reset_val;
-    // D58: tdata1 is writable ONLY from Debug Mode (cv32e40p_cs_registers.sv:1262:
-    // tmatch_control_we = csr_we_int & debug_mode_i). In M-mode, all writes
-    // are silently ignored. Since GVSOC doesn't implement Debug Mode, mask=0.
+    // tdata1 is writable ONLY from Debug Mode 
+    // In M-mode, all writes are silently ignored. 
+    // Since GVSOC model doesn't implement Debug Mode, mask=0.
     this->tdata1.set_write_mask(cfg_int_or(cfg, "tdata1_write_mask", 0x00000000));
 
-    // D58: tdata2 writable ONLY from Debug Mode (cv32e40p_cs_registers.sv:1263)
+    // tdata2 writable ONLY from Debug Mode (cv32e40p_cs_registers.sv:1263)
     this->tdata2.set_write_mask(cfg_int_or(cfg, "tdata2_write_mask", 0x00000000));
     this->tdata3.set_write_mask(cfg_int_or(cfg, "tdata3_write_mask", 0x00000000));
 
-    // D58: mcontext/scontext — writable only from Debug Mode
+    // mcontext/scontext — writable only from Debug Mode
     this->mcontext.set_write_mask(cfg_int_or(cfg, "mcontext_write_mask", 0x00000000));
     this->scontext.set_write_mask(cfg_int_or(cfg, "scontext_write_mask", 0x00000000));
 
-    // D29: tinfo — read-only, bit[2]=1 (type 2 = mcontrol supported)
+    // tinfo — read-only, bit[2]=1 (type 2 = mcontrol supported)
     this->tinfo.reset_val = cfg_int_or(cfg, "tinfo_reset", 0x4);
     this->tinfo.value     = this->tinfo.reset_val;
     this->tinfo.set_write_mask(0);  // read-only
@@ -191,15 +187,15 @@ void Cv32e40pCsr::build_cv32e40p()
     // ----------------------------------------------------------------
     // Read-only info registers — initialization
     // ----------------------------------------------------------------
-    // D32: mvendorid — OpenHW JEDEC bank 13, RISC-V compliant
+    // mvendorid — OpenHW JEDEC bank 13, RISC-V compliant
     this->mvendorid.reset_val = cfg_int_or(cfg, "mvendorid_value", 0x00000602);
     this->mvendorid.value     = this->mvendorid.reset_val;
 
-    // D32: marchid — CV32E40P architecture ID (cv32e40p_pkg.sv: MARCHID = 32'h4)
+    // marchid — CV32E40P architecture ID
     this->marchid.reset_val = cfg_int_or(cfg, "marchid_value", 0x00000004);
     this->marchid.value     = this->marchid.reset_val;
 
-    // D32: mhartid — hart ID (default 0, parameterizable per config)
+    // mhartid — hart ID (default 0, parameterizable per config)
     this->mhartid.reset_val = cfg_int_or(cfg, "mhartid_value", 0x00000000);
     this->mhartid.value     = this->mhartid.reset_val;
 
@@ -211,7 +207,7 @@ void Cv32e40pCsr::build_cv32e40p()
     // Counter CSRs
     // ----------------------------------------------------------------
 
-    // D18b: mcountinhibit — RTL resets to write_mask value (all implemented bits set).
+    // mcountinhibit — RTL resets to write_mask value (all implemented bits set).
     // With N=1 HPM counter: mask=0x0d (CY,IR,HPM3). With N=29: mask=0xfffffffd.
     iss_reg_t mcountinhibit_mask = (iss_reg_t)cfg_int_or(cfg, "mcountinhibit_mask", 0x0d);
     this->mcountinhibit.set_write_mask(mcountinhibit_mask);
@@ -248,7 +244,6 @@ void Cv32e40pCsr::build_cv32e40p()
         this->mhpmevent[i].set_write_mask((i < num_hpm) ? evt_mask : 0);
     }
 
-    // Plan A: behavioral-policy config fields (formerly virtual hooks).
     // CV32E40P raises illegal-instruction on access to undeclared CSRs
     // (RISC-V privileged spec strict mode); generic GVSOC just warns.
     this->raise_on_unsupported_csr_flag = true;
@@ -256,7 +251,7 @@ void Cv32e40pCsr::build_cv32e40p()
     // (reset_val=0x1, vectored mode) and rvviRefCsrSet.
     this->bootaddr_writes_mtvec_flag = false;
 
-    // D28: dcsr — build() runs after reset(), so apply dcsr M-mode here too
+    // dcsr — build() runs after reset(), so apply dcsr M-mode here too
     this->dcsr = (4 << 28) | 0x3;
 }
 
@@ -264,7 +259,7 @@ void Cv32e40pCsr::reset(bool active)
 {
     Csr::reset(active);
 
-    // D28: dcsr reset — xdebugver=4 in [31:28], prv=M-mode in [1:0]
+    // dcsr reset — xdebugver=4 in [31:28], prv=M-mode in [1:0]
     // Base Csr::reset() sets dcsr = 4 << 28 (prv=0). CV32E40P is M-mode only.
     this->dcsr = (4 << 28) | 0x3;
 
@@ -279,14 +274,14 @@ void Cv32e40pCsr::reset(bool active)
         this->marchid.value   = this->marchid.reset_val;
         this->mimpid.value    = this->mimpid.reset_val;
 
-        // D45: mstatus — Core::build() contaminates reset_val with FS=Dirty.
+        // mstatus — Core::build() contaminates reset_val with FS=Dirty.
         // CV32E40P: reset is ALWAYS 0x1800 (FS=Off, MPP=M) for ALL configs
         // including FPU (RTL: mstatus_fs_q <= FS_OFF at reset).
         iss_reg_t mstatus_rst = 0x00001800;
         this->mstatus.reset_val = mstatus_rst;
         this->mstatus.value     = mstatus_rst;
 
-        // D45b: tdata1 — re-apply value from build_cv32e40p() after Csr::reset()
+        // tdata1 — re-apply value from build_cv32e40p() after Csr::reset()
         // may have used a contaminated reset_val.  build_cv32e40p() reads
         // tdata1_reset from JSON config (default 0x28001040: m=1, u=0).
         this->tdata1.value = this->tdata1.reset_val;
@@ -366,16 +361,14 @@ bool Cv32e40pCsr::mcycle_access(bool is_write, iss_reg_t &value)
 void Cv32e40pCsr::mstatus_read_fixup(iss_reg_t &value)
 {
     /* CV32E40P: set mstatus.SD (bit 31) when FS[14:13]==3 or XS[16:15]==3.
-     * This matches the RTL read-back behavior for mstatus. */
+     * This matches read-back behavior for mstatus. */
     if (this->m_fpu_in_isa && (((value >> 13) & 3) == 3 || ((value >> 15) & 3) == 3))
     {
         value |= (1ULL << 31);
     }
 }
 
-// Plan A: EBREAK in M-mode enters debug when dcsr.ebreakm=1.
-// RISC-V Debug Spec §3.1.2 — bit 15 of dcsr is ebreakm.
-// dcsr is a Csr member (inherited).
+// EBREAK in M-mode enters debug when dcsr.ebreakm=1.
 bool Cv32e40pCsr::ebreak_m_mode_enters_debug()
 {
     return (this->dcsr >> 15) & 1;

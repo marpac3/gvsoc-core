@@ -1,5 +1,7 @@
 #
-# Copyright (C) 2026 OpenHW Group
+# Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
+#                    University of Bologna
+# Copyright (C) 2026 Fondazione Chips-it
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +14,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+
+#
+# Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
 #
 
 from cpu.iss.isa_gen.isa_gen import *

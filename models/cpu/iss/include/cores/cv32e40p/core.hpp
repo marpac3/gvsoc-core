@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +17,7 @@
  */
 
 /*
- * Authors: Marco Paci, Chips-it (marco.paci@chips.it)
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 #pragma once
@@ -29,14 +30,12 @@ public:
     Cv32e40pCore(Iss &iss) : Core(iss) {}
 
 protected:
-    /* Plan A: CV32E40P is M-mode only (PULP_SECURE=0 in RTL).
-     * RTL always sets priv_lvl_n = PRIV_LVL_M on MRET regardless of MPP
-     * (cv32e40p_cs_registers.sv:1069).  CSR writes can set MPP to 0, but
+    /* CV32E40P is M-mode only.
+     * CSR writes can set MPP to 0, but
      * MRET must ignore that and stay in M-mode. */
     void mret_mode_restore() override;
 
-    /* Plan A: CV32E40P mstatus_write_mask FPU-aware.
-     * D62: effective mask matches RTL always_ff (PULP_SECURE=0) —
+    /* CV32E40P mstatus_write_mask FPU-aware.
      * only MIE(3) + MPIE(7) writable; MPP forced to M by hardware.
      * With FPU: add FS(14:13). */
     void mstatus_write_mask_fixup() override;

@@ -103,11 +103,7 @@ static inline iss_reg_t jalr_exec_common(Iss *iss, iss_insn_t *insn, iss_reg_t p
     unsigned int D = insn->out_regs[0];
     if (D != 0)
         REG_SET(0, pc + insn->size);
-#if defined(CONFIG_GVSOC_ISS_V2)
-    iss->timing.event_jalr_account(insn->in_regs[0]);
-#else
     iss->timing.stall_jump_account();
-#endif
     iss->core.event_jalr.event((uint8_t *)&iss->exec.current_insn);
 
     return next_pc;
@@ -782,9 +778,8 @@ static inline iss_reg_t ebreak_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     {
         return iss->irq.debug_handler;
     }
-    // Plan A hook: EBREAK in M-mode debug entry (RISC-V Debug Spec §3.1.2).
+    // EBREAK in M-mode debug entry.
     // Default (generic RISC-V w/o debug): false → raise BREAKPOINT.
-    // Cv32e40pCsr overrides: true when dcsr.ebreakm=1 → enter debug.
     else if (iss->csr.ebreak_m_mode_enters_debug())
     {
         iss->dbgunit.set_halt_mode(true, HALT_CAUSE_EBREAK);

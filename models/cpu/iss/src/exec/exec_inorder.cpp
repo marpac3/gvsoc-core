@@ -168,9 +168,7 @@ void Exec::exec_instr(vp::Block *__this, vp::ClockEvent *event)
 
     if (iss->exec.handle_stall_cycles()) return;
 
-    // Plan A hook: pre-fetch IRQ check in fast handler.
-    // Default (non-CV32E40P): no-op, returns false → no early return.
-    // Cv32e40pIrq overrides to call check() and signal early return.
+    // Default if conf: returns false → no early return.
     if (!iss->exec.skip_irq_check && iss->irq.check_pre_fetch_fast())
     {
         return;
@@ -333,10 +331,8 @@ void Exec::exec_instr_check_all(vp::Block *__this, vp::ClockEvent *event)
 
     if (!_this->skip_irq_check)
     {
-        // Plan A hook: post-instruction IRQ check.
-        // Default (non-CV32E40P): calls check(), returns false → no early return.
-        // Cv32e40pIrq overrides to also return check() result for early return
-        // (matches RTL combinatorial DECODE-stage IRQ timing, WP-C).
+        // check_post_instr_slow default: calls  _this->iss.irq.check();
+        // returns false → no early return.
         if (_this->iss.irq.check_post_instr_slow())
         {
             return;
@@ -447,11 +443,8 @@ void Exec::fetchen_sync(vp::Block *__this, bool active)
 void Exec::bootaddr_apply(uint32_t value)
 {
     this->trace.msg("Setting boot address (value: 0x%x)\n", value);
-    // Plan A config field: derive mtvec from bootaddr when supported.
-    // Default (generic RISC-V): true → mtvec = bootaddr & ~0xFF.
-    // CV32E40P sets it false: mtvec is set by Csr::build() (reset_val=0x1,
-    // vectored mode) and rvviRefCsrSet; bootaddr 0x80 & ~0xFF = 0x0 would
-    // corrupt the RTL-mandated value.
+    // derive mtvec from bootaddr when supported.
+    // Default: true → mtvec = bootaddr & ~0xFF.
     if (this->iss.csr.bootaddr_writes_mtvec_flag)
     {
         iss_reg_t bootaddr = this->bootaddr_reg.get() & ~((1 << 8) - 1);

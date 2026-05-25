@@ -77,9 +77,8 @@ void Irq::reset(bool active)
     else
     {
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
-        // CV32E40P skips this: its mtvec is set by Cv32e40pCsr::build_cv32e40p()
-        // and overridden by rvviRefCsrSet at boot. Boot address 0x80 & ~0xFF == 0
-        // would corrupt the RTL-mandated mtvec value.
+        // Skipped when CONFIG_GVSOC_ISS_CV32E40P sets mtvec via subclass build
+        // and overrides via rvviRefCsrSet at boot.
         this->mtvec_set(this->iss.exec.bootaddr_reg.get() & ~((1 << 8) - 1));
         this->stvec_set(this->iss.exec.bootaddr_reg.get() & ~((1 << 8) - 1));
 #endif
@@ -228,8 +227,7 @@ bool Irq::stvec_set(iss_addr_t base)
 
 void Irq::elw_irq_unstall()
 {
-    /* Base implementation: no-op.
-     * CV32E40P overrides this in Cv32e40pIrq to handle ELW interrupt wake-up. */
+    // Base implementation: no-op. specialized class overrides this
 }
 
 void Irq::cache_flush()

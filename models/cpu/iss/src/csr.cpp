@@ -71,9 +71,9 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->tdata2,   "tdata2",       0x7A2);
     this->declare_csr(&this->tdata3,   "tdata3",       0x7A3);
 
-    // tinfo/mcontext/scontext/minstret/mcycleh/minstreth are CV32E40P-only;
-    // subclass Cv32e40pCsr::build_cv32e40p() initializes reset/mask values.
-    // For other cores these CSRs remain unregistered (upstream behavior).
+    // Optional extension CSRs (guarded by CONFIG_GVSOC_ISS_CV32E40P below).
+    // When the config is off, these CSRs remain unregistered (upstream behavior);
+    // reset/mask values are configured by the subclass when applicable.
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
     this->declare_csr(&this->tinfo,    "tinfo",        0x7A4);
     this->declare_csr(&this->mcontext, "mcontext",     0x7A8);
@@ -96,7 +96,7 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->mcycle,   "mcycle",    0xB00);
     this->mcycle.register_callback(std::bind(&Csr::mcycle_access, this, std::placeholders::_1, std::placeholders::_2));
     // Machine counter / timers — base default: read-only (mask=0).
-    // CV32E40P overrides via Cv32e40pCsr::build_cv32e40p() per num_mhpmcounters.
+    // Subclasses can override via Csr::declare_csr() to enable per-core masks.
     for (int i=0; i<29; i++)
     {
         this->declare_csr(&this->mhpmcounter[i], "mhpmcounter" + std::to_string(i+ 3), 0xB03 + i, 0, 0);
@@ -106,7 +106,7 @@ Csr::Csr(Iss &iss)
     }
 
     // Machine counter setup — base default: read-only (mask=0).
-    // CV32E40P overrides via Cv32e40pCsr::build_cv32e40p() per RTL mcountinhibit_mask.
+    // Subclasses can override via set_write_mask() to enable per-core masks.
     this->declare_csr(&this->mcountinhibit, "mcountinhibit", 0x320, 0, 0);
 
 
@@ -1353,11 +1353,8 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
     iss->csr.trace.msg("Writing CSR (reg: 0x%x, name: %s, value: 0x%x)\n",
         reg, iss_csr_name(iss, reg), value);
 
-    // Plan A: HWLOOP CSR writes are core-specific.
-    // CV32E40P (cv32e40p_decoder.sv:2918-2924): writes to 0xCC0-0xCC6 are illegal
-    //   (lpstart/lpend/lpcount are read-only via CSR instructions).
-    // BUG-25: previously silently called hwloop_write() causing mepc divergence.
-    // Hook hwloop_csr_index() returns >=0 for hwloop range; we raise illegal.
+    // HWLOOP CSR writes are core-specific.
+    // Hook hwloop_csr_index() returns >=0 for hwloop range → raise illegal.
     // Other cores (no HWLOOP via CSR) return -1 → branch skipped.
     if (iss->csr.hwloop_csr_index(reg) >= 0)
     {
@@ -1389,7 +1386,8 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
     switch (reg)
     {
 
-    // User trap setup/handling — CV32E40P is M-mode only, these fall through to illegal
+    // User trap setup/handling — guarded by CONFIG_GVSOC_ISS_CV32E40P:
+    // M-mode-only profiles bypass these and fall through to illegal.
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
     case 0x000:
         return ustatus_write(iss, value);
@@ -1805,8 +1803,8 @@ const char *iss_csr_name(Iss *iss, iss_reg_t reg)
     }
 #endif
 
-    // Plan A: core-specific CSR name via virtual hook (e.g. Cv32e40pCsr returns
-    // lpstart0/lpend0/lpcount0/lpstart1/lpend1/lpcount1 for 0xCC0-0xCC6 CoreV2 HWLOOP).
+    // Core-specific CSR name lookup via virtual hook
+    // (default: nullptr → fall through to "unknown").
     if (const char *core_name = iss->csr.custom_csr_name(reg))
     {
         return core_name;

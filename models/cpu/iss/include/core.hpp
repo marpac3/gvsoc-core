@@ -43,15 +43,13 @@ public:
 
     int mode_get() { return this->mode; }
 
-    /* Plan A hook: privilege-mode restore on MRET.
-     * Default: from mstatus.mpp (generic RISC-V).
-     * Cv32e40pCore overrides: force PRIV_M (RTL PULP_SECURE=0, M-mode only). */
+    /* privilege-mode restore on MRET.
+     * Default: from mstatus.mpp */
     virtual void mret_mode_restore();
 
-    /* Plan A hook: per-core mstatus_write_mask customization, called at end of
-     * build() after generic mask is computed.
-     * Default: no-op.
-     * Cv32e40pCore overrides: FPU-aware mask (FS bits added when fpu_in_isa). */
+    /* mstatus_write_mask customization, 
+     * called at end of build() after generic mask is computed.
+     * Default: no-op.*/
     virtual void mstatus_write_mask_fixup() {}
 
     void mode_set(int mode);

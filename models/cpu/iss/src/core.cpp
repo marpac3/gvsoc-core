@@ -56,7 +56,7 @@ void Core::build()
     this->iss.csr.mstatus.reset_val |= 2ULL << 34;
 #endif
 
-    // Default: no-op. Cv32e40pCore overrides to apply FPU-aware mask
+    // Default: no-op. Subclasses can override to apply a core-specific mask.
     this->mstatus_write_mask_fixup();
 
 #if ISS_REG_WIDTH == 64
@@ -121,7 +121,7 @@ iss_reg_t Core::mret_handle()
     this->iss.csr.mstatus.mie = this->iss.csr.mstatus.mpie;
     this->iss.csr.mstatus.mpie = 1;
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
-    // Generic RISC-V clears mcause after MRET. CV32E40P keeps it.
+    // Generic RISC-V clears mcause after MRET; CONFIG_GVSOC_ISS_CV32E40P preserves it.
     this->iss.csr.mcause.value = 0;
 #endif
 
@@ -144,7 +144,7 @@ iss_reg_t Core::sret_handle()
     this->iss.csr.mstatus.sie = this->iss.csr.mstatus.spie;
     this->iss.csr.mstatus.spie = 1;
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
-    // Generic RISC-V clears scause after SRET. CV32E40P keeps it.
+    // Generic RISC-V clears scause after SRET; CONFIG_GVSOC_ISS_CV32E40P preserves it.
     this->iss.csr.scause.value = 0;
 #endif
 
