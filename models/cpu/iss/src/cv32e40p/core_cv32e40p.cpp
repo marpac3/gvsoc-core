@@ -43,4 +43,4 @@ void Cv32e40pCore::mstatus_write_mask_fixup()
     this->mstatus_write_mask = fpu_in_isa ? (iss_reg_t)0x6088 : (iss_reg_t)0x0088;
 }
 
-#endif
+#endif /* CONFIG_GVSOC_ISS_CV32E40P */

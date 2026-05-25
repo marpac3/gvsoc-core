@@ -51,9 +51,6 @@ Csr::Csr(Iss &iss)
 
     // Machine trap setup
     this->declare_csr(&this->mstatus,    "mstatus",    0x300);
-    // mstatus access callback registration is core-specific:
-    // Cv32e40pCsr::build_cv32e40p() registers Cv32e40pCsr::mstatus_access
-    // for MPP/MPRV/UIE/UPIE forcing semantics.
     this->declare_csr(&this->misa,       "misa",       0x301, 0, 0);
     this->declare_csr(&this->medeleg,    "medeleg",    0x302);
     this->declare_csr(&this->mideleg,    "mideleg",    0x303);
@@ -73,10 +70,11 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->tdata1,   "tdata1",       0x7A1);
     this->declare_csr(&this->tdata2,   "tdata2",       0x7A2);
     this->declare_csr(&this->tdata3,   "tdata3",       0x7A3);
-    // Plan A: tinfo/mcontext/scontext/minstret/mcycleh/minstreth declared
-    // unconditionally — harmless for cores that don't use them. Core-specific
-    // callback registration (e.g. mstatus_access for CV32E40P) lives in the
-    // core's CSR subclass build_*() (see Cv32e40pCsr::build_cv32e40p).
+
+    // tinfo/mcontext/scontext/minstret/mcycleh/minstreth are CV32E40P-only;
+    // subclass Cv32e40pCsr::build_cv32e40p() initializes reset/mask values.
+    // For other cores these CSRs remain unregistered (upstream behavior).
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
     this->declare_csr(&this->tinfo,    "tinfo",        0x7A4);
     this->declare_csr(&this->mcontext, "mcontext",     0x7A8);
     this->declare_csr(&this->scontext, "scontext",     0x7AA);
@@ -86,6 +84,7 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->mcycleh,   "mcycleh",    0xB80);
     this->declare_csr(&this->minstreth,  "minstreth",   0xB82);
 #endif
+#endif /* CONFIG_GVSOC_ISS_CV32E40P */
 
     // Machine Non-Maskable Interrupt Handling
     this->declare_csr(&this->mnscratch,   "mnscratch",    0x740);
@@ -96,23 +95,20 @@ Csr::Csr(Iss &iss)
     // Machine timers and counters
     this->declare_csr(&this->mcycle,   "mcycle",    0xB00);
     this->mcycle.register_callback(std::bind(&Csr::mcycle_access, this, std::placeholders::_1, std::placeholders::_2));
-    // Machine counter / timers
-    // Default: mask=-1 (fully writable per RISC-V priv spec).
-    // CV32E40P overrides with specific masks in Cv32e40pCsr::build_cv32e40p().
+    // Machine counter / timers — base default: read-only (mask=0).
+    // CV32E40P overrides via Cv32e40pCsr::build_cv32e40p() per num_mhpmcounters.
     for (int i=0; i<29; i++)
     {
-        this->declare_csr(&this->mhpmcounter[i], "mhpmcounter" + std::to_string(i+ 3), 0xB03 + i);
+        this->declare_csr(&this->mhpmcounter[i], "mhpmcounter" + std::to_string(i+ 3), 0xB03 + i, 0, 0);
 #if ISS_REG_WIDTH == 32
-        this->declare_csr(&this->mhpmcounterh[i], "mhpmcounterh" + std::to_string(i+ 3), 0xB83 + i);
+        this->declare_csr(&this->mhpmcounterh[i], "mhpmcounterh" + std::to_string(i+ 3), 0xB83 + i, 0, 0);
 #endif
     }
 
-    // Machine counter setup
-    this->declare_csr(&this->mcountinhibit, "mcountinhibit", 0x320);
+    // Machine counter setup — base default: read-only (mask=0).
+    // CV32E40P overrides via Cv32e40pCsr::build_cv32e40p() per RTL mcountinhibit_mask.
+    this->declare_csr(&this->mcountinhibit, "mcountinhibit", 0x320, 0, 0);
 
-    // mhpmevent3..31 (0x323-0x33F): declared in Cv32e40pCsr::build_cv32e40p()
-    // for CV32E40P (with proper write masks). Not declared here to avoid
-    // duplicate registration when CONFIG_GVSOC_ISS_CV32E40P is active.
 
     // Machine information registers
     this->declare_csr(&this->mvendorid,  "mvendorid",  0xF11);
@@ -251,7 +247,7 @@ bool Csr::tselect_access(bool is_write, iss_reg_t &value)
 {
     if (!is_write)
     {
-        // Plan A config field — base default -1, CV32E40P sets it to reset_val.
+        // base default -1.
         value = this->tselect_default_read;
     }
     return false;
@@ -954,8 +950,7 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
   }
 #endif
 
-    // Plan A: core-specific HWLOOP CSR mapping via virtual hook.
-    // Cv32e40pCsr returns 0..6 for 0xCC0..0xCC6 (gap at 0xCC3 returns -1).
+    // core-specific HWLOOP CSR mapping via virtual hook.
     {
         int hwloop_idx = iss->csr.hwloop_csr_index(reg);
         if (hwloop_idx >= 0)
@@ -973,7 +968,7 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
     switch (reg)
     {
 
-    // User trap setup/handling — CV32E40P is M-mode only, these fall to default (illegal)
+    // User trap setup/handling
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
     case 0x000:
         status = ustatus_read(iss, value);
@@ -1334,7 +1329,7 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
 
         if (status)
         {
-            // Plan A config field decides exception vs warning per core.
+            // config field decides exception vs warning per core.
             if (iss->csr.raise_on_unsupported_csr_flag)
             {
                 iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR read (id: 0x%x) -> illegal instruction\n", reg);

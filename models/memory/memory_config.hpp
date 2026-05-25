@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2020 GreenWaves Technologies, SAS, ETH Zurich and
  *                    University of Bologna
+ * Copyright (C) 2026 Fondazione Chips-it
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,6 +14,10 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ */
+
+/*
+ * Authors: Marco Paci, Fondazione Chips-it (marco.paci@chips.it)
  */
 
 /*
@@ -32,8 +37,7 @@
  *   latency:  int = cfg_field(default=0,     dump=True)
  *   truncate: int = cfg_field(default=True,  dump=True)
  *
- * IMPORTANT: must remain a plain POD struct — no virtual functions,
- * no user-provided constructors — vp::Component copies it via memcpy.
+ * Must remain POD — vp::Component copies it via memcpy.
  */
 struct MemoryConfig {
     uint64_t size     = 0;

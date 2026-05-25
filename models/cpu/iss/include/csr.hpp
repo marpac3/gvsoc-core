@@ -218,8 +218,9 @@ public:
 #endif
     CsrReg mcountinhibit;
 
-    // Plan A: declared unconditionally so Csr::build() can declare them
-    // without #ifdef.  Core-specific callbacks/init in subclass build_*().
+    // CV32E40P-only CSRs (kept out of base to preserve upstream behavior
+    // for other cores: access falls through to "unsupported CSR" warning).
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
 #if ISS_REG_WIDTH == 32
     CsrReg mcycleh;
     CsrReg minstreth;
@@ -231,6 +232,7 @@ public:
     CsrReg tinfo;
     CsrReg mcontext;
     CsrReg scontext;
+#endif /* CONFIG_GVSOC_ISS_CV32E40P */
 
 #if defined(CONFIG_GVSOC_ISS_PMP)
     CsrReg pmpcfg[16];

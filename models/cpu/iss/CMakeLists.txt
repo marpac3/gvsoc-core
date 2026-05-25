@@ -29,9 +29,6 @@ function(generate_isa)
     set(ISS_FILES
         "${F_GVSOC_ISS_DIR}/src/prefetch/prefetch_single_line.cpp"
         "${F_GVSOC_ISS_DIR}/src/csr.cpp"
-        "${F_GVSOC_ISS_DIR}/src/csr_cv32e40p.cpp"
-        "${F_GVSOC_ISS_DIR}/src/irq_cv32e40p.cpp"
-        "${F_GVSOC_ISS_DIR}/src/core_cv32e40p.cpp"
         "${F_GVSOC_ISS_DIR}/src/exec/exec_inorder.cpp"
         "${F_GVSOC_ISS_DIR}/src/decode.cpp"
         "${F_GVSOC_ISS_DIR}/src/lsu.cpp"
@@ -80,7 +77,6 @@ function(generate_isa)
         DEFINITIONS
         "-DRISCV=1"
         "-DRISCY"
-        "-DCONFIG_GVSOC_ISS_CV32E40P=1"
         )
 
     vp_model_compile_options(NAME ${GEN_ISA_NAME} OPTIONS "-fno-strict-aliasing")

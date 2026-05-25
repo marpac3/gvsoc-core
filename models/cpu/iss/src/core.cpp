@@ -56,9 +56,7 @@ void Core::build()
     this->iss.csr.mstatus.reset_val |= 2ULL << 34;
 #endif
 
-    // Plan A hook: per-core mstatus_write_mask customization.
     // Default: no-op. Cv32e40pCore overrides to apply FPU-aware mask
-    // (RTL PULP_SECURE=0: MIE(3) + MPIE(7) only; with FPU adds FS(14:13)).
     this->mstatus_write_mask_fixup();
 
 #if ISS_REG_WIDTH == 64
@@ -115,16 +113,15 @@ iss_reg_t Core::mret_handle()
 {
     this->iss.exec.switch_to_full_mode();
 
-    // Plan A hook: privilege-mode restore on MRET.
-    // Default: from mstatus.mpp (generic RISC-V).
-    // Cv32e40pCore overrides: force PRIV_M (RTL PULP_SECURE=0, M-mode only).
+    //privilege-mode restore on MRET.
+    // Default: from mstatus.mpp
     this->mret_mode_restore();
 
     this->iss.irq.irq_enable.set(this->iss.csr.mstatus.mpie);
     this->iss.csr.mstatus.mie = this->iss.csr.mstatus.mpie;
     this->iss.csr.mstatus.mpie = 1;
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
-    // Generic RISC-V clears mcause after MRET; CV32E40P RTL does not (D21).
+    // Generic RISC-V clears mcause after MRET. CV32E40P keeps it.
     this->iss.csr.mcause.value = 0;
 #endif
 
@@ -147,7 +144,7 @@ iss_reg_t Core::sret_handle()
     this->iss.csr.mstatus.sie = this->iss.csr.mstatus.spie;
     this->iss.csr.mstatus.spie = 1;
 #ifndef CONFIG_GVSOC_ISS_CV32E40P
-    // Generic RISC-V clears scause after SRET; CV32E40P RTL does not (D21).
+    // Generic RISC-V clears scause after SRET. CV32E40P keeps it.
     this->iss.csr.scause.value = 0;
 #endif
 
