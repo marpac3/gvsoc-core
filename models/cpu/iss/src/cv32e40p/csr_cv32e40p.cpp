@@ -57,6 +57,11 @@ void Cv32e40pCsr::build_cv32e40p()
     this->m_fpu_in_isa = this->iss.top.get_js_config()->get_child_bool("fpu_in_isa");
     this->m_zfinx = this->iss.top.get_js_config()->get_child_bool("zfinx");
 
+    // Plan A migration (from csr.cpp #ifdef CV32E40P at original line 54):
+    // CV32E40P mstatus access callback — forces MPP=M on reads, lets writes
+    // proceed via Cv32e40pCsr::mstatus_access() override.
+    this->mstatus.register_callback(std::bind(&Cv32e40pCsr::mstatus_access, this, std::placeholders::_1, std::placeholders::_2));
+
     // CV32E40P is M-mode only: remove CSRs that don't exist
     uint32_t nonexistent[] = {
         0x100, 0x104, 0x105, 0x106,           // sstatus, sie, stvec, scounteren
@@ -80,8 +85,11 @@ void Cv32e40pCsr::build_cv32e40p()
     }
 
     // D29: tinfo register — CV32E40P trigger info (read-only, value=0x4)
-    this->undeclare_csr(0x7A4);  // Remove if base declared it
-    this->declare_csr(&this->tinfo, "tinfo", 0x7A4);
+    // Plan A: base Csr now declares tinfo unconditionally (no undeclare+redeclare needed).
+    // reset_val and write_mask set below in this method.
+
+    // CV32E40P-specific minstret access semantics (BUG-26: stub auto-increment).
+    this->minstret.register_callback(std::bind(&Cv32e40pCsr::minstret_access, this, std::placeholders::_1, std::placeholders::_2));
 
     auto *cfg = this->iss.top.get_js_config();
 
@@ -298,6 +306,47 @@ bool Cv32e40pCsr::minstret_access(bool is_write, iss_reg_t &value)
     return true;  // let default read/write proceed
 }
 
+bool Cv32e40pCsr::fp_access_illegal()
+{
+    // CV32E40P RTL (cv32e40p_cs_registers.sv): FP CSR (fflags/frm/fcsr) access
+    // raises illegal-instruction when mstatus[FS] == 00 (FS_OFF).
+    return ((this->mstatus.value >> 13) & 3) == 0;
+}
+
+iss_reg_t Cv32e40pCsr::tselect_default_read_value()
+{
+    // D34: CV32E40P has exactly 1 trigger; tselect hardwired to 0.
+    // RTL reads always return reset_val (0) regardless of write attempts.
+    return this->tselect.reset_val;
+}
+
+int Cv32e40pCsr::hwloop_csr_index(iss_reg_t reg)
+{
+    // CoreV2 HWLOOP CSR addresses (gap at 0xCC3):
+    //   0xCC0..0xCC2 → loop 0 (start/end/count)  → indices 0..2
+    //   0xCC4..0xCC6 → loop 1 (start/end/count)  → indices 4..6
+    // Internal hwloop_regs[] uses stride 4 (per loop slot), matching CoreV2.
+    if ((reg >= 0xCC0 && reg <= 0xCC2) || (reg >= 0xCC4 && reg <= 0xCC6))
+    {
+        return reg - 0xCC0;
+    }
+    return -1;
+}
+
+const char *Cv32e40pCsr::custom_csr_name(iss_reg_t reg)
+{
+    switch (reg)
+    {
+        case 0xCC0: return "lpstart0";
+        case 0xCC1: return "lpend0";
+        case 0xCC2: return "lpcount0";
+        case 0xCC4: return "lpstart1";
+        case 0xCC5: return "lpend1";
+        case 0xCC6: return "lpcount1";
+        default:    return nullptr;  // fall through to base/generic
+    }
+}
+
 bool Cv32e40pCsr::mcountinhibit_access(bool is_write, iss_reg_t &value)
 {
     return true;  // placeholder
@@ -334,6 +383,14 @@ void Cv32e40pCsr::mstatus_read_fixup(iss_reg_t &value)
     {
         value |= (1ULL << 31);
     }
+}
+
+// Plan A: EBREAK in M-mode enters debug when dcsr.ebreakm=1.
+// RISC-V Debug Spec §3.1.2 — bit 15 of dcsr is ebreakm.
+// dcsr is a Csr member (inherited).
+bool Cv32e40pCsr::ebreak_m_mode_enters_debug()
+{
+    return (this->dcsr >> 15) & 1;
 }
 
 #endif /* CONFIG_GVSOC_ISS_CV32E40P */

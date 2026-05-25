@@ -31,6 +31,7 @@ function(generate_isa)
         "${F_GVSOC_ISS_DIR}/src/csr.cpp"
         "${F_GVSOC_ISS_DIR}/src/csr_cv32e40p.cpp"
         "${F_GVSOC_ISS_DIR}/src/irq_cv32e40p.cpp"
+        "${F_GVSOC_ISS_DIR}/src/core_cv32e40p.cpp"
         "${F_GVSOC_ISS_DIR}/src/exec/exec_inorder.cpp"
         "${F_GVSOC_ISS_DIR}/src/decode.cpp"
         "${F_GVSOC_ISS_DIR}/src/lsu.cpp"

@@ -217,8 +217,10 @@ public:
     CsrReg mhpmcounterh[29];
 #endif
     CsrReg mcountinhibit;
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
 
+    // Plan A: declared unconditionally so Csr::build() can declare them
+    // without #ifdef.  Core-specific callbacks/init in subclass build_*().
+    // Memory cost for non-CV32E40P: ~7 * sizeof(CsrReg) ≈ few hundred bytes.
 #if ISS_REG_WIDTH == 32
     CsrReg mcycleh;
     CsrReg minstreth;
@@ -230,7 +232,6 @@ public:
     CsrReg tinfo;
     CsrReg mcontext;
     CsrReg scontext;
-#endif
 
 #if defined(CONFIG_GVSOC_ISS_PMP)
     CsrReg pmpcfg[16];
@@ -272,6 +273,48 @@ public:
     /* Hook for core-specific mstatus read fixup (e.g. SD bit).
      * Called by Core::mstatus_update on read path. Default: no-op. */
     virtual void mstatus_read_fixup(iss_reg_t &value) {}
+
+    /* Plan A hook: FP/Vector CSR access pre-check.
+     * Default: allow (returns false → not illegal).
+     * Cv32e40pCsr overrides: returns true when mstatus[FS]==00 (Off).
+     * Called from static fflags/frm/fcsr read/write to detect illegal access. */
+    virtual bool fp_access_illegal() { return false; }
+
+    /* Plan A hook: default tselect read value (when no trigger selected).
+     * Default: -1 (all-1s, conventional "no trigger" sentinel).
+     * Cv32e40pCsr overrides: returns tselect.reset_val (hardwired 0 per RTL). */
+    virtual iss_reg_t tselect_default_read_value() { return (iss_reg_t)-1; }
+
+    /* Plan A hook: behavior on access to an undeclared/unsupported CSR.
+     * Default: log warning, no exception (legacy GVSOC behavior).
+     * Cv32e40pCsr overrides: raise illegal-instruction (RISC-V spec strict). */
+    virtual bool raise_on_unsupported_csr() { return false; }
+
+    /* Plan A hook: map a CSR address to its core-specific HWLOOP register index.
+     * Default: -1 (not a HWLOOP CSR).
+     * Cv32e40pCsr overrides: 0xCC0..0xCC2 → 0..2, 0xCC4..0xCC6 → 4..6 (CoreV2 mapping).
+     * Used by iss_csr_read (dispatch to hwloop_read) and iss_csr_write
+     * (CV32E40P raises illegal — HWLOOP CSRs are read-only via CSR insn). */
+    virtual int hwloop_csr_index(iss_reg_t reg) { return -1; }
+
+    /* Plan A hook: core-specific CSR name lookup for trace messages.
+     * Default: nullptr (fall through to generic table).
+     * Cv32e40pCsr overrides: 0xCC0..0xCC6 → "lpstart0"/"lpend0"/.../"lpcount1". */
+    virtual const char *custom_csr_name(iss_reg_t reg) { return nullptr; }
+
+    /* Plan A hook: whether Exec::bootaddr_apply should derive mtvec from
+     * boot address.
+     * Default: true (generic RISC-V derives mtvec = bootaddr & ~0xFF).
+     * Cv32e40pCsr overrides: false — mtvec is set by Csr::build()
+     * (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr derivation
+     * would corrupt the RTL-mandated value. */
+    virtual bool bootaddr_writes_mtvec() { return true; }
+
+    /* Plan A hook: EBREAK in M-mode behavior.
+     * Default: false → raise ISS_EXCEPT_BREAKPOINT (generic RISC-V w/o debug).
+     * Cv32e40pCsr overrides: true when dcsr.ebreakm=1, enter debug mode
+     * (RISC-V Debug Spec §3.1.2). */
+    virtual bool ebreak_m_mode_enters_debug() { return false; }
 
 protected:
     virtual bool mstatus_access(bool is_write, iss_reg_t &value);

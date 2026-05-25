@@ -100,4 +100,21 @@ void Cv32e40pIrq::elw_irq_unstall()
     this->iss.exec.busy_enter();
 }
 
+// Plan A: pre-fetch IRQ check in fast handler.
+// Matches RTL combinatorial decode-stage IRQ timing: check interrupts BEFORE
+// fetching the next instruction so mepc captures the PC of the instruction
+// about to execute.  Returns true if IRQ taken (caller should early-return).
+bool Cv32e40pIrq::check_pre_fetch_fast()
+{
+    return this->check() != 0;
+}
+
+// Plan A: post-instruction IRQ check in slow handler (exec_instr_check_all).
+// WP-C: same RTL timing requirement as fast handler — early-return on IRQ
+// taken to defer next-instruction fetch to next cycle.
+bool Cv32e40pIrq::check_post_instr_slow()
+{
+    return this->check() != 0;
+}
+
 #endif /* CONFIG_GVSOC_ISS_CV32E40P */

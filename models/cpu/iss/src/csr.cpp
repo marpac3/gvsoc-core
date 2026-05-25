@@ -51,9 +51,9 @@ Csr::Csr(Iss &iss)
 
     // Machine trap setup
     this->declare_csr(&this->mstatus,    "mstatus",    0x300);
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    this->mstatus.register_callback(std::bind(&Csr::mstatus_access, this, std::placeholders::_1, std::placeholders::_2));
-#endif
+    // mstatus access callback registration is core-specific:
+    // Cv32e40pCsr::build_cv32e40p() registers Cv32e40pCsr::mstatus_access
+    // for MPP/MPRV/UIE/UPIE forcing semantics.
     this->declare_csr(&this->misa,       "misa",       0x301, 0, 0);
     this->declare_csr(&this->medeleg,    "medeleg",    0x302);
     this->declare_csr(&this->mideleg,    "mideleg",    0x303);
@@ -73,17 +73,18 @@ Csr::Csr(Iss &iss)
     this->declare_csr(&this->tdata1,   "tdata1",       0x7A1);
     this->declare_csr(&this->tdata2,   "tdata2",       0x7A2);
     this->declare_csr(&this->tdata3,   "tdata3",       0x7A3);
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // Plan A: tinfo/mcontext/scontext/minstret/mcycleh/minstreth declared
+    // unconditionally — harmless for cores that don't use them. Core-specific
+    // callback registration (e.g. minstret_access for CV32E40P) lives in the
+    // core's CSR subclass build_*() (see Cv32e40pCsr::build_cv32e40p).
     this->declare_csr(&this->tinfo,    "tinfo",        0x7A4);
     this->declare_csr(&this->mcontext, "mcontext",     0x7A8);
     this->declare_csr(&this->scontext, "scontext",     0x7AA);
 
     this->declare_csr(&this->minstret,   "minstret",    0xB02);
-    this->minstret.register_callback(std::bind(&Csr::minstret_access, this, std::placeholders::_1, std::placeholders::_2));
 #if ISS_REG_WIDTH == 32
     this->declare_csr(&this->mcycleh,   "mcycleh",    0xB80);
     this->declare_csr(&this->minstreth,  "minstreth",   0xB82);
-#endif
 #endif
 
     // Machine Non-Maskable Interrupt Handling
@@ -250,11 +251,8 @@ bool Csr::tselect_access(bool is_write, iss_reg_t &value)
 {
     if (!is_write)
     {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-        value = this->tselect.reset_val;
-#else
-        value = -1;
-#endif
+        // Plan A: virtual hook — base returns -1, Cv32e40pCsr returns reset_val.
+        value = this->tselect_default_read_value();
     }
     return false;
 }
@@ -391,78 +389,66 @@ static bool uip_write(Iss *iss, unsigned int value)
 
 static bool fflags_read(Iss *iss, iss_reg_t *value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     *value = iss->csr.fcsr.fflags;
     return false;
 }
 
 static bool fflags_write(Iss *iss, unsigned int value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     iss->csr.fcsr.fflags = value;
     return false;
 }
 
 static bool frm_read(Iss *iss, iss_reg_t *value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     *value = iss->csr.fcsr.frm;
     return false;
 }
 
 static bool frm_write(Iss *iss, unsigned int value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     iss->csr.fcsr.frm = value;
     return false;
 }
 
 static bool fcsr_read(Iss *iss, iss_reg_t *value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     *value = iss->csr.fcsr.raw;
     return false;
 }
 
 static bool fcsr_write(Iss *iss, unsigned int value)
 {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (((iss->csr.mstatus.value >> 13) & 3) == 0)
+    if (iss->csr.fp_access_illegal())
     {
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
     iss->csr.fcsr.raw = value & 0xff;
     return false;
 }
@@ -973,14 +959,15 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
   }
 #endif
 
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    // CV32E40P uses 0xCC0-0xCC6 for HWLOOP CSRs (gap at 0xCC3).
-    // Remap valid addresses to internal hwloop_regs (stride 4).
-    if ((reg >= 0xCC0 && reg <= 0xCC2) || (reg >= 0xCC4 && reg <= 0xCC6))
+    // Plan A: core-specific HWLOOP CSR mapping via virtual hook.
+    // Cv32e40pCsr returns 0..6 for 0xCC0..0xCC6 (gap at 0xCC3 returns -1).
     {
-        return hwloop_read(iss, reg - 0xCC0, value);
+        int hwloop_idx = iss->csr.hwloop_csr_index(reg);
+        if (hwloop_idx >= 0)
+        {
+            return hwloop_read(iss, hwloop_idx, value);
+        }
     }
-#endif
     // New generic way of handling CSR access, all CSR should be accessed there
     if (!iss->csr.access(false, reg, *value))
     {
@@ -1352,15 +1339,16 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
 
         if (status)
         {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-            iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR read (id: 0x%x) -> illegal instruction\n", reg);
-            iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
-#else
-            iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
-#endif
-#if 0
-      triggerException_cause(iss, iss->currentPc, EXCEPTION_ILLEGAL_INSTR, ECAUSE_ILL_INSTR);
-#endif
+            // Plan A: virtual hook decides exception vs warning per core.
+            if (iss->csr.raise_on_unsupported_csr())
+            {
+                iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR read (id: 0x%x) -> illegal instruction\n", reg);
+                iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
+            }
+            else
+            {
+                iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
+            }
             return true;
         }
     }
@@ -1375,20 +1363,18 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
     iss->csr.trace.msg("Writing CSR (reg: 0x%x, name: %s, value: 0x%x)\n",
         reg, iss_csr_name(iss, reg), value);
 
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    // CV32E40P: lpstart/lpend/lpcount CSRs (0xCC0-0xCC6) are read-only
-    // via CSR instructions. Per cv32e40p_decoder.sv lines 2918-2924:
-    //   if (!COREV_PULP || csr_op != CSR_OP_READ) csr_illegal = 1'b1;
-    // All write attempts raise illegal instruction (even with COREV_PULP=1).
-    // BUG-25 fix: was silently calling hwloop_write(), causing mepc divergence
-    // in cv32e40p_readonly_csr_access_test (12 fewer illegals than RTL).
-    if (reg >= 0xCC0 && reg <= 0xCC6)
+    // Plan A: HWLOOP CSR writes are core-specific.
+    // CV32E40P (cv32e40p_decoder.sv:2918-2924): writes to 0xCC0-0xCC6 are illegal
+    //   (lpstart/lpend/lpcount are read-only via CSR instructions).
+    // BUG-25: previously silently called hwloop_write() causing mepc divergence.
+    // Hook hwloop_csr_index() returns >=0 for hwloop range; we raise illegal.
+    // Other cores (no HWLOOP via CSR) return -1 → branch skipped.
+    if (iss->csr.hwloop_csr_index(reg) >= 0)
     {
         iss->csr.trace.msg("Illegal CSR write to hwloop register (id: 0x%x)\n", reg);
         iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
         return true;
     }
-#endif
 
     // If there is any write to a CSR, switch to full check instruction handler
     // in case something special happened (like HW counting become active)
@@ -1503,15 +1489,16 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
         return hwloop_write(iss, reg - CSR_HWLOOP0_START, value);
 #endif
 
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR write (id: 0x%x) -> illegal instruction\n", reg);
-    iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
-#else
-    iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
-#endif
-#if 0
-  triggerException_cause(iss, iss->currentPc, EXCEPTION_ILLEGAL_INSTR, ECAUSE_ILL_INSTR);
-#endif
+    // Plan A: virtual hook decides exception vs warning per core.
+    if (iss->csr.raise_on_unsupported_csr())
+    {
+        iss->csr.trace.msg(vp::Trace::LEVEL_DEBUG, "Unsupported CSR write (id: 0x%x) -> illegal instruction\n", reg);
+        iss->exception.raise(iss->exec.current_insn, ISS_EXCEPT_ILLEGAL);
+    }
+    else
+    {
+        iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
+    }
 
     return true;
 }
@@ -1828,21 +1815,12 @@ const char *iss_csr_name(Iss *iss, iss_reg_t reg)
     }
 #endif
 
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    if (reg >= 0xCC0 && reg <= 0xCC6)
+    // Plan A: core-specific CSR name via virtual hook (e.g. Cv32e40pCsr returns
+    // lpstart0/lpend0/lpcount0/lpstart1/lpend1/lpcount1 for 0xCC0-0xCC6 CoreV2 HWLOOP).
+    if (const char *core_name = iss->csr.custom_csr_name(reg))
     {
-        switch (reg)
-        {
-            case 0xCC0: return "lpstart0";
-            case 0xCC1: return "lpend0";
-            case 0xCC2: return "lpcount0";
-            case 0xCC4: return "lpstart1";
-            case 0xCC5: return "lpend1";
-            case 0xCC6: return "lpcount1";
-            default: return "hwloop_unused";
-        }
+        return core_name;
     }
-#endif
 
     return "unknown";
 }

@@ -48,6 +48,18 @@ public:
      * CV32E40P: override with empty body (RTL does not clear on xret). */
     virtual void post_mret_hook();
     virtual void post_sret_hook();
+
+    /* Plan A hook: privilege-mode restore on MRET.
+     * Default: from mstatus.mpp (generic RISC-V).
+     * Cv32e40pCore overrides: force PRIV_M (RTL PULP_SECURE=0, M-mode only). */
+    virtual void mret_mode_restore();
+
+    /* Plan A hook: per-core mstatus_write_mask customization, called at end of
+     * build() after generic mask is computed.
+     * Default: no-op.
+     * Cv32e40pCore overrides: FPU-aware mask (FS bits added when fpu_in_isa). */
+    virtual void mstatus_write_mask_fixup() {}
+
     void mode_set(int mode);
     iss_reg_t load_reserve_addr_get() { return this->load_reserve_addr; }
     void load_reserve_addr_set(iss_reg_t addr) { this->load_reserve_addr = addr; }
@@ -58,15 +70,17 @@ public:
     vp::Trace event_jal;
     vp::Trace event_jalr;
 
+protected:
+    Iss &iss;
+    iss_reg_t mstatus_write_mask;
+
 private:
     bool mstatus_update(bool is_write, iss_reg_t &value);
     bool sstatus_update(bool is_write, iss_reg_t &value);
 
-    Iss &iss;
     vp::Trace trace;
 
     int mode;
-    iss_reg_t mstatus_write_mask;
     iss_reg_t sstatus_write_mask;
     iss_reg_t load_reserve_addr;
     bool reset_stall = false;

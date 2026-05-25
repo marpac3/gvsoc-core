@@ -168,15 +168,13 @@ void Exec::exec_instr(vp::Block *__this, vp::ClockEvent *event)
 
     if (iss->exec.handle_stall_cycles()) return;
 
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    // CV32E40P: check interrupts pre-fetch in fast handler to match RTL decode-stage IRQ timing.
-    // RTL checks interrupts combinatorially every cycle at DECODE; without this guard GVSOC
-    // would only check post-execute (in exec_instr_check_all), causing mepc off-by-one.
-    if (!iss->exec.skip_irq_check && iss->irq.check())
+    // Plan A hook: pre-fetch IRQ check in fast handler.
+    // Default (non-CV32E40P): no-op, returns false → no early return.
+    // Cv32e40pIrq overrides to call check() and signal early return.
+    if (!iss->exec.skip_irq_check && iss->irq.check_pre_fetch_fast())
     {
         return;
     }
-#endif
 
     iss->exec.trace.msg(vp::Trace::LEVEL_TRACE, "Handling instruction with fast handler\n");
 
@@ -335,21 +333,14 @@ void Exec::exec_instr_check_all(vp::Block *__this, vp::ClockEvent *event)
 
     if (!_this->skip_irq_check)
     {
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-        /* WP-C: Pre-fetch IRQ check — matches RTL combinatorial check in
-         * DECODE state (cv32e40p_controller.sv).  Check interrupts BEFORE
-         * fetching the next instruction so that mepc captures the PC of the
-         * instruction about to execute.  If an IRQ is taken, irq.check()
-         * sets current_insn=mtvec and adds stall cycles; we return
-         * immediately so the handler instruction is fetched on the next
-         * cycle invocation. */
-        if (_this->iss.irq.check())
+        // Plan A hook: post-instruction IRQ check.
+        // Default (non-CV32E40P): calls check(), returns false → no early return.
+        // Cv32e40pIrq overrides to also return check() result for early return
+        // (matches RTL combinatorial DECODE-stage IRQ timing, WP-C).
+        if (_this->iss.irq.check_post_instr_slow())
         {
             return;
         }
-#else
-        _this->iss.irq.check();
-#endif
     }
     else
     {
@@ -456,14 +447,16 @@ void Exec::fetchen_sync(vp::Block *__this, bool active)
 void Exec::bootaddr_apply(uint32_t value)
 {
     this->trace.msg("Setting boot address (value: 0x%x)\n", value);
-#ifndef CONFIG_GVSOC_ISS_CV32E40P
-    /* Generic RISC-V: derive mtvec from boot address.
-     * CV32E40P: mtvec is set by Csr::build() (reset_val=0x1) and
-     * rvviRefCsrSet.  bootaddr 0x80 & ~0xFF = 0x0 is wrong for
-     * CV32E40P where mtvec reset is 0x1 (vectored mode). */
-    iss_reg_t bootaddr = this->bootaddr_reg.get() & ~((1 << 8) - 1);
-    this->iss.csr.mtvec.access(true, bootaddr);
-#endif
+    // Plan A hook: derive mtvec from bootaddr when supported.
+    // Default (generic RISC-V): true → mtvec = bootaddr & ~0xFF.
+    // Cv32e40pCsr overrides to false: mtvec is set by Csr::build()
+    // (reset_val=0x1, vectored mode) and rvviRefCsrSet; bootaddr 0x80 & ~0xFF
+    // = 0x0 would corrupt the RTL-mandated value.
+    if (this->iss.csr.bootaddr_writes_mtvec())
+    {
+        iss_reg_t bootaddr = this->bootaddr_reg.get() & ~((1 << 8) - 1);
+        this->iss.csr.mtvec.access(true, bootaddr);
+    }
 }
 
 

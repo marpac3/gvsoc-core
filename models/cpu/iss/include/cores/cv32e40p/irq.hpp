@@ -34,6 +34,16 @@ public:
     bool mtvec_access(bool is_write, iss_reg_t &value) override;
     void elw_irq_unstall() override;
 
+    /* Plan A: pre-fetch IRQ check in fast handler — matches RTL combinatorial
+     * decode-stage IRQ timing (cv32e40p_controller.sv).  Without this hook the
+     * fast handler would only check IRQs post-execute, causing mepc off-by-one. */
+    bool check_pre_fetch_fast() override;
+
+    /* Plan A: post-instruction IRQ check in slow handler.  Same RTL timing
+     * requirement: returns IRQ-taken status so caller can early-return and
+     * defer next-instruction fetch to next cycle. */
+    bool check_post_instr_slow() override;
+
 protected:
     void register_csr_callbacks() override;
 };

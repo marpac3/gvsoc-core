@@ -37,6 +37,37 @@ public:
     bool mcycle_access(bool is_write, iss_reg_t &value) override;
     void mstatus_read_fixup(iss_reg_t &value) override;
 
+    // Plan A: FP/Vector CSR access pre-check.
+    // Returns true (illegal) when mstatus[FS] == 00 (Off) — CV32E40P RTL
+    // raises illegal-instruction on FP CSR access while FS=Off.
+    bool fp_access_illegal() override;
+
+    // Plan A: tselect default read value — returns tselect.reset_val (0 per RTL).
+    iss_reg_t tselect_default_read_value() override;
+
+    // Plan A: CV32E40P raises illegal-instruction on access to undeclared CSRs
+    // (RISC-V privileged spec strict mode). Other cores just warn.
+    bool raise_on_unsupported_csr() override { return true; }
+
+    // Plan A: CoreV2 HWLOOP CSR mapping.
+    //   0xCC0..0xCC2 → 0..2  (lpstart0/lpend0/lpcount0)
+    //   0xCC4..0xCC6 → 4..6  (lpstart1/lpend1/lpcount1)
+    //   gap at 0xCC3 / outside range → -1.
+    int hwloop_csr_index(iss_reg_t reg) override;
+
+    // Plan A: CoreV2 HWLOOP CSR names for trace messages.
+    const char *custom_csr_name(iss_reg_t reg) override;
+
+    // Plan A: CV32E40P bootaddr does NOT write mtvec.
+    // mtvec is set by Csr::build() (reset_val=0x1, vectored mode) and
+    // rvviRefCsrSet; bootaddr 0x80 & ~0xFF = 0x0 would corrupt the value.
+    bool bootaddr_writes_mtvec() override { return false; }
+
+    // Plan A: EBREAK in M-mode enters debug when dcsr.ebreakm=1.
+    // RISC-V Debug Spec §3.1.2 — bit 15 of dcsr is ebreakm.
+    // Impl out-of-line in csr_cv32e40p.cpp (needs complete Iss type).
+    bool ebreak_m_mode_enters_debug() override;
+
     // PULP custom CSRs (0xCD0-0xCD2)
     CsrReg uhartid;     // 0xCD0 — duplicate of mhartid (user-mode readable)
     CsrReg privlv;      // 0xCD1 — current privilege level

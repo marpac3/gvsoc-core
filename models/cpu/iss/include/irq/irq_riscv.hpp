@@ -66,6 +66,18 @@ public:
     virtual void elw_irq_unstall();
     void check_interrupts();
 
+    /* Plan A hook: pre-fetch IRQ check in fast handler (Exec::exec_instr).
+     * Default: no-op, returns false (no IRQ check pre-fetch).
+     * Cv32e40pIrq overrides: calls check(); returns true on IRQ taken
+     * (matches RTL combinatorial decode-stage IRQ timing). */
+    virtual bool check_pre_fetch_fast() { return false; }
+
+    /* Plan A hook: post-instruction IRQ check in slow handler
+     * (Exec::exec_instr_check_all).
+     * Default: calls check(), returns false (no early return).
+     * Cv32e40pIrq overrides: returns check() result so caller can early-return. */
+    virtual bool check_post_instr_slow() { this->check(); return false; }
+
 protected:
     virtual void register_csr_callbacks();
 

@@ -56,18 +56,10 @@ void Core::build()
     this->iss.csr.mstatus.reset_val |= 2ULL << 34;
 #endif
 
-    // CV32E40P: CsrAbtractReg::write_mask is set by build_cv32e40p(),
-    // but Core::mstatus_update() returns false → bypasses that mask and
-    // uses Core::mstatus_write_mask instead.  Override it here.
-    // D62: effective mask matches RTL always_ff (PULP_SECURE=0) —
-    // only MIE(3) + MPIE(7) writable; MPP forced to M by hardware.
-    // With FPU: add FS(14:13).
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    {
-        bool fpu_in_isa = this->iss.top.get_js_config()->get_child_bool("fpu_in_isa");
-        this->mstatus_write_mask = fpu_in_isa ? (iss_reg_t)0x6088 : (iss_reg_t)0x0088;
-    }
-#endif
+    // Plan A hook: per-core mstatus_write_mask customization.
+    // Default: no-op. Cv32e40pCore overrides to apply FPU-aware mask
+    // (RTL PULP_SECURE=0: MIE(3) + MPIE(7) only; with FPU adds FS(14:13)).
+    this->mstatus_write_mask_fixup();
 
 #if ISS_REG_WIDTH == 64
     this->sstatus_write_mask = this->mstatus_write_mask & 0x80000003000DE762;
@@ -109,26 +101,25 @@ void Core::reset(bool active)
 }
 
 
-iss_reg_t Core::mret_handle()
+void Core::mret_mode_restore()
 {
-    this->iss.exec.switch_to_full_mode();
-
-    /* D58: CV32E40P is M-mode only (PULP_SECURE=0 in RTL).
-     * The RTL always sets priv_lvl_n = PRIV_LVL_M on MRET regardless of MPP
-     * (cv32e40p_cs_registers.sv:1069).  CSR writes can set MPP to 0, but MRET
-     * must ignore that and stay in M-mode.  Without this guard, mode becomes 0
-     * after MRET with MPP=0, causing subsequent traps to write MPP=0 → mismatch. */
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
-    this->mode_set(PRIV_M);
-    this->iss.csr.mstatus.mpp = PRIV_M;
-#else
     this->mode_set(this->iss.csr.mstatus.mpp);
 #ifdef CONFIG_GVSOC_ISS_USER_MODE
     this->iss.csr.mstatus.mpp = PRIV_U;
 #else
     this->iss.csr.mstatus.mpp = PRIV_M;
 #endif
-#endif
+}
+
+iss_reg_t Core::mret_handle()
+{
+    this->iss.exec.switch_to_full_mode();
+
+    // Plan A hook: privilege-mode restore on MRET.
+    // Default: from mstatus.mpp (generic RISC-V).
+    // Cv32e40pCore overrides: force PRIV_M (RTL PULP_SECURE=0, M-mode only).
+    this->mret_mode_restore();
+
     this->iss.irq.irq_enable.set(this->iss.csr.mstatus.mpie);
     this->iss.csr.mstatus.mie = this->iss.csr.mstatus.mpie;
     this->iss.csr.mstatus.mpie = 1;
