@@ -950,7 +950,8 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
   }
 #endif
 
-    // core-specific HWLOOP CSR mapping via virtual hook.
+#if defined(CONFIG_GVSOC_ISS_RI5KY) || defined(CONFIG_GVSOC_ISS_HWLOOP)
+    // HWLOOP CSR mapping (matches hwloop_read gate above).
     {
         int hwloop_idx = iss->csr.hwloop_csr_index(reg);
         if (hwloop_idx >= 0)
@@ -958,6 +959,7 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
             return hwloop_read(iss, hwloop_idx, value);
         }
     }
+#endif
     // New generic way of handling CSR access, all CSR should be accessed there
     if (!iss->csr.access(false, reg, *value))
     {

@@ -168,11 +168,14 @@ void Exec::exec_instr(vp::Block *__this, vp::ClockEvent *event)
 
     if (iss->exec.handle_stall_cycles()) return;
 
-    // Default if conf: returns false → no early return.
-    if (!iss->exec.skip_irq_check && iss->irq.check_pre_fetch_fast())
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // Combinatorial DECODE-stage IRQ check: redirect to mtvec before fetching
+    // the next instruction if an interrupt is pending.
+    if (!iss->exec.skip_irq_check && iss->irq.check())
     {
         return;
     }
+#endif
 
     iss->exec.trace.msg(vp::Trace::LEVEL_TRACE, "Handling instruction with fast handler\n");
 
@@ -331,12 +334,17 @@ void Exec::exec_instr_check_all(vp::Block *__this, vp::ClockEvent *event)
 
     if (!_this->skip_irq_check)
     {
-        // check_post_instr_slow default: calls  _this->iss.irq.check();
-        // returns false → no early return.
-        if (_this->iss.irq.check_post_instr_slow())
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+        /* Combinatorial DECODE-stage IRQ check (mirrors RTL controller): on a
+         * pending interrupt, redirect to mtvec before fetching next insn so
+         * mepc captures the right PC. */
+        if (_this->iss.irq.check())
         {
             return;
         }
+#else
+        _this->iss.irq.check();
+#endif
     }
     else
     {
