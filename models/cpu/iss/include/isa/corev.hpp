@@ -61,7 +61,8 @@ static inline iss_reg_t corev_hwloop_check_exec(Iss *iss, iss_insn_t *insn, iss_
     }
 
     // First check HW loop 0 as it has higher priority compared to HW loop 1
-    if (iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT0] && iss->csr.hwloop_regs[COREV_HWLOOP_LPEND0] == pc)
+    // CV32E40P: the loop-end stub fires at LPEND-4, so stored LPEND == pc + 4.
+    if (iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT0] && iss->csr.hwloop_regs[COREV_HWLOOP_LPEND0] == pc + 4)
     {
         iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT0]--;
         iss->decode.trace.msg("Reached end of HW loop (index: 0, loop count: %d)\n", iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT0]);
@@ -77,7 +78,8 @@ static inline iss_reg_t corev_hwloop_check_exec(Iss *iss, iss_insn_t *insn, iss_
 
     // We get here either if HW loop 0 was not active or if the counter reached 0.
     // In both cases, HW loop 1 can jump back to the beginning of the loop.
-    if (iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT1] && iss->csr.hwloop_regs[COREV_HWLOOP_LPEND1] == pc)
+    // CV32E40P: the loop-end stub fires at LPEND-4, so stored LPEND == pc + 4.
+    if (iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT1] && iss->csr.hwloop_regs[COREV_HWLOOP_LPEND1] == pc + 4)
     {
         iss->csr.hwloop_regs[COREV_HWLOOP_LPCOUNT1]--;
         // If counter is not zero, we must jump back to beginning of the loop.
@@ -98,14 +100,21 @@ static inline iss_reg_t corev_hwloop_check_exec(Iss *iss, iss_insn_t *insn, iss_
 
 static inline void corev_hwloop_set_start(Iss *iss, iss_insn_t *insn, int index, iss_reg_t start)
 {
+    // lpstart holds a word address; bits [1:0] are hardwired 0. Align the
+    // register-sourced operand (the csrw path is masked in hwloop_write).
+    start &= ~0x3u;
     iss->csr.hwloop_regs[COREV_HWLOOP_LPSTART(index)] = start;
     iss->exec.hwloop_set_start(index, start);
 }
 
 static inline void corev_hwloop_set_end(Iss *iss, iss_insn_t *insn, int index, iss_reg_t end)
 {
+    // lpend holds a word address; bits [1:0] are hardwired 0.
+    end &= ~0x3u;
     iss->csr.hwloop_regs[COREV_HWLOOP_LPEND(index)] = end;
-    iss->exec.hwloop_set_end(index, end);
+    // CV32E40P loops back from the last body instruction (LPEND-4), not LPEND.
+    // The last body instruction is always 32-bit, so the offset is exactly 4.
+    iss->exec.hwloop_set_end(index, end - 4);
 }
 
 static inline void corev_hwloop_set_count(Iss *iss, iss_insn_t *insn, int index, iss_reg_t count)
@@ -260,9 +269,47 @@ static inline iss_reg_t cv_bsetr_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     return iss_insn_next(iss, insn, pc);
 }
 
+// CV32E40P-exact variants of the generic XPULP scalar helpers, used where the
+// shared lib diverges from the RTL (cv.bitrev, cv.machhuRN/cv.macuRN).
+static inline uint32_t rev32_cv32e40p(uint32_t x)
+{
+    uint32_t r = 0;
+    for (int i = 0; i < 32; i++) if ((x >> i) & 1) r |= 1u << (31 - i);
+    return r;
+}
+// cv.bitrev: reverse(rs1), shift right by Is2, reverse back, then radix-reverse
+// selected by Is3 (0 = full radix-2 reverse, 1 = radix-4 2-bit groups, 2 = radix-8
+// 3-bit groups). The shared lib_BITREV uses a different group-rotation algorithm.
+static inline unsigned int lib_BITREV_cv32e40p(Iss *s, unsigned int input, unsigned int Is2, unsigned int Is3)
+{
+    uint32_t sh = rev32_cv32e40p(rev32_cv32e40p(input) >> (Is2 & 0x1f));
+    uint32_t sel = Is3 & 0x3;
+    uint32_t out = 0;
+    if (sel == 1)      { for (int j = 0; j < 16; j++) out |= ((sh >> (31 - 2 * j - 1)) & 0x3u) << (2 * j); }
+    else if (sel == 2) { for (int j = 0; j < 10; j++) out |= ((sh >> (31 - 3 * j - 2)) & 0x7u) << (3 * j); }
+    else               { out = rev32_cv32e40p(sh); }
+    return out;
+}
+// CV32E40P-exact unsigned MAC high/low-half round-and-normalize (cv.machhuRN /
+// cv.macuRN). The accumulate is kept in 32 bits, so the rounding-add carry past bit
+// 31 is dropped before the shift; the shared lib promotes it to 64 bits, which lets
+// the carry survive and corrupt large shifts.
+static inline unsigned int lib_MAC_ZH_ZH_NR_R_cv32e40p(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
+{
+    uint32_t result = (uint32_t)(a + ((b >> 16) & 0xffffu) * ((c >> 16) & 0xffffu));
+    if (shift > 0) result = (uint32_t)(result + (1u << (shift - 1))) >> shift;
+    return result;
+}
+static inline unsigned int lib_MAC_ZL_ZL_NR_R_cv32e40p(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
+{
+    uint32_t result = (uint32_t)(a + (b & 0xffffu) * (c & 0xffffu));
+    if (shift > 0) result = (uint32_t)(result + (1u << (shift - 1))) >> shift;
+    return result;
+}
+
 static inline iss_reg_t cv_bitrev_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-    REG_SET(0, LIB_CALL3(lib_BITREV, REG_GET(0), UIM_GET(0), UIM_GET(1) + 1));
+    REG_SET(0, LIB_CALL3(lib_BITREV_cv32e40p, REG_GET(0), UIM_GET(0), UIM_GET(1)));
     return iss_insn_next(iss, insn, pc);
 }
 
@@ -1079,10 +1126,9 @@ static inline void hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg
 }
 #endif
 
-// CV32E40P CoreV2 encodes the hwloop "immediate" as a word offset (x4) --
-// RTL cv32e40p_id_stage.sv:1366 `pc + (imm_iz_type << 2)` and
-// cv32e40p_hwloop_regs.sv:71,83 force 4-byte alignment. The legacy PulpV2
-// default was halfword (x2). Behavior-preserving for non-CV32E40P (macro=1).
+// CV32E40P CoreV2 encodes the hwloop immediate as a word offset (x4); the legacy
+// PulpV2 default was a halfword offset (x2). The else-branch keeps x2 for the
+// other targets.
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
 #define COREV_HWLOOP_IMM_SHIFT 2
 #else
@@ -1741,6 +1787,199 @@ static inline iss_reg_t pv_packlo_b_exec(Iss *iss, iss_insn_t *insn, iss_reg_t p
     return iss_insn_next(iss, insn, pc);
 }
 
+static inline iss_reg_t cv_pack_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_PACK_SC_16, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_pack_h_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_PACK_SC_H_16, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_packhi_b_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL3(lib_VEC_PACKHI_SC_8, REG_GET(0), REG_GET(1), REG_GET(2)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_packlo_b_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL3(lib_VEC_PACKLO_SC_8, REG_GET(0), REG_GET(1), REG_GET(2)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_add_div2_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_int16_t_to_int32_t_div2, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_add_div4_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_int16_t_to_int32_t_div4, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_add_div8_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_int16_t_to_int32_t_div8, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_sub_div2_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_SUB_int16_t_to_int32_t_div2, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_sub_div4_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_SUB_int16_t_to_int32_t_div4, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_sub_div8_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_SUB_int16_t_to_int32_t_div8, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_subrotmj_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_16_ROTMJ, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_subrotmj_div2_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_16_ROTMJ_DIV2, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_subrotmj_div4_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_16_ROTMJ_DIV4, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_subrotmj_div8_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    REG_SET(0, LIB_CALL2(lib_VEC_ADD_16_ROTMJ_DIV8, REG_GET(0), REG_GET(1)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxconj_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    REG_SET(0, LIB_CALL1(lib_CPLX_CONJ_16, REG_GET(0)));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_r_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_R, REG_GET(0), REG_GET(1), REG_GET(2), 0));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_r_div2_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_R, REG_GET(0), REG_GET(1), REG_GET(2), 1));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_r_div4_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_R, REG_GET(0), REG_GET(1), REG_GET(2), 2));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_r_div8_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_R, REG_GET(0), REG_GET(1), REG_GET(2), 3));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_i_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_I, REG_GET(0), REG_GET(1), REG_GET(2), 0));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_i_div2_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_I, REG_GET(0), REG_GET(1), REG_GET(2), 1));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_i_div4_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_I, REG_GET(0), REG_GET(1), REG_GET(2), 2));
+    return iss_insn_next(iss, insn, pc);
+}
+
+static inline iss_reg_t cv_cplxmul_i_div8_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
+    iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
+    REG_SET(0, LIB_CALL4(lib_CPLXMUL_H_I, REG_GET(0), REG_GET(1), REG_GET(2), 3));
+    return iss_insn_next(iss, insn, pc);
+}
+
 PV_OP_RS_EXEC(cmpeq, CMPEQ)
 
 PV_OP_RS_EXEC(cmpne, CMPNE)
@@ -2044,7 +2283,7 @@ static inline iss_reg_t p_macuNR_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
-    REG_SET(0, LIB_CALL4(lib_MAC_ZL_ZL_NR_R, REG_GET(2), REG_GET(0), REG_GET(1), UIM_GET(0)));
+    REG_SET(0, LIB_CALL4(lib_MAC_ZL_ZL_NR_R_cv32e40p, REG_GET(2), REG_GET(0), REG_GET(1), UIM_GET(0)));
     return iss_insn_next(iss, insn, pc);
 }
 
@@ -2053,7 +2292,7 @@ static inline iss_reg_t p_machhuNR_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(0));
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(1));
     iss->regfile.memcheck_merge(REG_OUT(0), REG_IN(2));
-    REG_SET(0, LIB_CALL4(lib_MAC_ZH_ZH_NR_R, REG_GET(2), REG_GET(0), REG_GET(1), UIM_GET(0)));
+    REG_SET(0, LIB_CALL4(lib_MAC_ZH_ZH_NR_R_cv32e40p, REG_GET(2), REG_GET(0), REG_GET(1), UIM_GET(0)));
     return iss_insn_next(iss, insn, pc);
 }
 

@@ -405,6 +405,10 @@ static bool fflags_write(Iss *iss, unsigned int value)
     }
 #endif
     iss->csr.fcsr.fflags = value;
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // RTL: fflags write (fflags_we_i) forces mstatus.FS=Dirty.
+    iss->csr.fp_state_dirty();
+#endif
     return false;
 }
 
@@ -431,6 +435,10 @@ static bool frm_write(Iss *iss, unsigned int value)
     }
 #endif
     iss->csr.fcsr.frm = value;
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // RTL: FP-CSR write (fcsr_update covers frm) forces mstatus.FS=Dirty.
+    iss->csr.fp_state_dirty();
+#endif
     return false;
 }
 
@@ -457,6 +465,10 @@ static bool fcsr_write(Iss *iss, unsigned int value)
     }
 #endif
     iss->csr.fcsr.raw = value & 0xff;
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // RTL: FP-CSR write (fcsr_update) forces mstatus.FS=Dirty.
+    iss->csr.fp_state_dirty();
+#endif
     return false;
 }
 
@@ -779,6 +791,16 @@ static bool hwloop_read(Iss *iss, int reg, iss_reg_t *value)
 
 static bool hwloop_write(Iss *iss, int reg, unsigned int value)
 {
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // CV32E40P: lpstart/lpend hold a word address with the low 2 bits hardwired 0.
+    // Mask only those; lpcount is a count, not an address, so leave it untouched.
+    if (reg == PULPV2_HWLOOP_LPSTART(0) || reg == PULPV2_HWLOOP_LPEND(0) ||
+        reg == PULPV2_HWLOOP_LPSTART(1) || reg == PULPV2_HWLOOP_LPEND(1))
+    {
+        value &= ~0x3u;
+    }
+#endif
+
     iss->csr.hwloop_regs[reg] = value;
 
     // Since the HW loop is using decode instruction for the HW loop start to jump faster

@@ -73,4 +73,16 @@
 #define FREG_SET(reg,val) (iss->regfile.set_freg(insn->out_regs[reg], val))
 #endif
 
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+// CV32E40P RTL (cv32e40p_cs_registers.sv): an FP regfile write (fregs_we_i)
+// forces mstatus.FS=Dirty. Redefine the FP-write macros to promote FS after
+// the write. Kept in this isolated block (not inline above) so the shared FREG
+// definitions preprocess back to upstream byte-for-byte without this define.
+// CV32E40P builds with ISS_SINGLE_REGFILE, so FP writes use REG_SET.
+#define FP_DIRTY_AFTER(setexpr) ((setexpr), iss->csr.fp_state_dirty())
+#undef FREG_SET
+#undef FREG32_SET
+#define FREG_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
+#define FREG32_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
+#endif
 #endif
