@@ -295,6 +295,12 @@ public:
      * Called from static fflags/frm/fcsr read/write to detect illegal access. */
     virtual bool fp_access_illegal() { return false; }
 
+    /* Promote mstatus.FS to Dirty on FP state change.
+     * Default: no-op → preserves behavior for all non-CV32E40P cores
+     * (Snitch/PULP/etc.). CV32E40P RTL forces FS=Dirty on FP regfile write,
+     * fflags update, or FP-CSR write. Override in Cv32e40pCsr. */
+    virtual void fp_state_dirty() {}
+
     /* Default tselect read value when no trigger is selected.
      * Default: -1 (all-1s, conventional "no trigger" sentinel). */
     iss_reg_t tselect_default_read = (iss_reg_t)-1;

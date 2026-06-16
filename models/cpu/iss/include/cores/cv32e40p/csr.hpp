@@ -42,6 +42,12 @@ public:
     // raises illegal-instruction on FP CSR access while FS=Off.
     bool fp_access_illegal() override;
 
+    // Promote mstatus.FS to Dirty(11) on any FP state change.
+    // RTL (cv32e40p_cs_registers.sv) forces FS=Dirty when FPU=1 && ZFINX=0 on
+    // FP regfile write, fflags update, or FP-CSR write. SD(bit31) is derived
+    // on read (SD = FS==3), not stored here.
+    void fp_state_dirty() override;
+
     // CoreV2 HWLOOP CSR mapping.
     //   0xCC0..0xCC2 → 0..2  (lpstart0/lpend0/lpcount0)
     //   0xCC4..0xCC6 → 4..6  (lpstart1/lpend1/lpcount1)

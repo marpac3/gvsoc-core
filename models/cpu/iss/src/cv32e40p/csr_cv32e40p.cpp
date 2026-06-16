@@ -308,6 +308,19 @@ bool Cv32e40pCsr::fp_access_illegal()
     return ((this->mstatus.value >> 13) & 3) == 0;
 }
 
+void Cv32e40pCsr::fp_state_dirty()
+{
+    // CV32E40P RTL (cv32e40p_cs_registers.sv:1027-1037): when FPU=1 && ZFINX=0,
+    // mstatus.FS is forced to FS_DIRTY(2'b11) on FP regfile write, fflags
+    // update, or FP-CSR write. Gated on m_fpu_in_isa (false for ZFINX) to
+    // match fp_access_illegal / SD read-fixup. SD(bit31) is derived on read
+    // (SD = FS==3) — not stored here.
+    if (this->m_fpu_in_isa)
+    {
+        this->mstatus.value = (this->mstatus.value & ~(0x3 << 13)) | (0x3 << 13);
+    }
+}
+
 int Cv32e40pCsr::hwloop_csr_index(iss_reg_t reg)
 {
     // CoreV2 HWLOOP CSR addresses (gap at 0xCC3):
