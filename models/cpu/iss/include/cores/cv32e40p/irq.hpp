@@ -33,6 +33,7 @@ public:
     bool mie_access(bool is_write, iss_reg_t &value) override;
     bool mtvec_access(bool is_write, iss_reg_t &value) override;
     void elw_irq_unstall() override;
+    iss_reg_t compute_trap_entry(iss_reg_t base, int cause, bool is_interrupt) override;
 
 protected:
     void register_csr_callbacks() override;

@@ -86,5 +86,18 @@ void Cv32e40pIrq::elw_irq_unstall()
     this->iss.exec.busy_enter();
 }
 
+/* CV32E40P vectored trap entry.  mtvec.value keeps the MODE bit (write_mask
+ * 0xFFFFFF01): MODE=1 (vectored) -> an interrupt enters at (base & ~1) + cause*4;
+ * direct mode (and exceptions) enter at the base.  Matches the RTL mtvec.MODE. */
+iss_reg_t Cv32e40pIrq::compute_trap_entry(iss_reg_t base, int cause, bool is_interrupt)
+{
+    iss_reg_t vbase = base & ~(iss_reg_t)1;
+    if (is_interrupt && (base & 1))
+    {
+        return vbase + (iss_reg_t)cause * 4;
+    }
+    return vbase;
+}
+
 
 #endif /* CONFIG_GVSOC_ISS_CV32E40P */

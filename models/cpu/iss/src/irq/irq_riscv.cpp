@@ -294,6 +294,14 @@ void Irq::check_interrupts()
     }
 }
 
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+// CV32E40P: default trap-entry returns the base unchanged (upstream direct-mode
+// behaviour).  Cv32e40pIrq overrides this to implement vectored mode.
+iss_reg_t Irq::compute_trap_entry(iss_reg_t base, int /*cause*/, bool /*is_interrupt*/)
+{
+    return base;
+}
+#endif
 int Irq::check()
 {
     if (this->req_debug && !this->iss.exec.debug_mode)
@@ -378,7 +386,14 @@ int Irq::check()
                     this->iss.csr.mstatus.mie = 0;
                     this->iss.csr.mstatus.mpie = this->iss.irq.irq_enable.get();
                     this->iss.csr.mstatus.mpp = this->iss.core.mode_get();
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+                    // CV32E40P: honour mtvec.MODE (vectored -> base + cause*4).  The
+                    // default Irq::compute_trap_entry() returns the base unchanged, so
+                    // non-CV32E40P targets keep the upstream direct-mode behaviour.
+                    this->iss.exec.current_insn = this->compute_trap_entry(this->iss.csr.mtvec.value, irq, true);
+#else
                     this->iss.exec.current_insn = this->iss.csr.mtvec.value;
+#endif
                     this->iss.csr.mcause.value = (1ULL << (ISS_REG_WIDTH - 1)) | (unsigned int)irq;
                 }
                 else

@@ -73,6 +73,12 @@ public:
     void cache_flush();
     void reset(bool active);
     int check();
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // CV32E40P: compute the interrupt trap-vector entry.  Default returns the
+    // base unchanged (= upstream direct-mode mtvec.value); Cv32e40pIrq overrides
+    // it to add vectored mode (mtvec.MODE=1 -> base + cause*4).
+    virtual iss_reg_t compute_trap_entry(iss_reg_t base, int cause, bool is_interrupt);
+#endif
     void wfi_handle();
 #ifdef CONFIG_GVSOC_ISS_CV32E40P
     virtual void elw_irq_unstall();
