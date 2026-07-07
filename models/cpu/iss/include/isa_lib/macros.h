@@ -78,11 +78,19 @@
 // forces mstatus.FS=Dirty. Redefine the FP-write macros to promote FS after
 // the write. Kept in this isolated block (not inline above) so the shared FREG
 // definitions preprocess back to upstream byte-for-byte without this define.
-// CV32E40P builds with ISS_SINGLE_REGFILE, so FP writes use REG_SET.
+// The write must target the same bank as the definitions above: the integer
+// regfile on ISS_SINGLE_REGFILE (ZFINX) builds, the FP regfile otherwise
+// (FPU=1 ZFINX=0 builds have a separate FP bank; routing these writes to
+// REG_SET there corrupts the integer registers).
 #define FP_DIRTY_AFTER(setexpr) ((setexpr), iss->csr.fp_state_dirty())
 #undef FREG_SET
 #undef FREG32_SET
+#ifdef ISS_SINGLE_REGFILE
 #define FREG_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
 #define FREG32_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
+#else
+#define FREG_SET(reg,val) FP_DIRTY_AFTER(iss->regfile.set_freg(insn->out_regs[reg], val))
+#define FREG32_SET(reg,val) FP_DIRTY_AFTER(iss->regfile.set_freg(insn->out_regs[reg], val))
+#endif
 #endif
 #endif
