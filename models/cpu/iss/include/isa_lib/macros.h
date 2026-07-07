@@ -82,15 +82,29 @@
 // regfile on ISS_SINGLE_REGFILE (ZFINX) builds, the FP regfile otherwise
 // (FPU=1 ZFINX=0 builds have a separate FP bank; routing these writes to
 // REG_SET there corrupts the integer registers).
-#define FP_DIRTY_AFTER(setexpr) ((setexpr), iss->csr.fp_state_dirty())
+// The has_exception guard kills the writeback (and the FS promotion) of an
+// FP instruction that raised illegal-instruction mid-execution — reserved
+// rounding mode, see setFFRoundingMode — matching the RTL, where a trapped
+// instruction has no side effects. The value expression MUST be evaluated
+// before the guard: the raise happens inside it, so testing has_exception
+// first would always see the pre-raise state.
 #undef FREG_SET
 #undef FREG32_SET
 #ifdef ISS_SINGLE_REGFILE
-#define FREG_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
-#define FREG32_SET(reg,val) FP_DIRTY_AFTER(REG_SET(reg, val))
+#define FREG_SET(reg,val) \
+    do { iss_reg_t fp_wb_val_ = (val); \
+         if (!iss->exec.has_exception) { \
+             REG_SET(reg, fp_wb_val_); \
+             iss->csr.fp_state_dirty(); \
+         } } while (0)
 #else
-#define FREG_SET(reg,val) FP_DIRTY_AFTER(iss->regfile.set_freg(insn->out_regs[reg], val))
-#define FREG32_SET(reg,val) FP_DIRTY_AFTER(iss->regfile.set_freg(insn->out_regs[reg], val))
+#define FREG_SET(reg,val) \
+    do { iss_freg_t fp_wb_val_ = (val); \
+         if (!iss->exec.has_exception) { \
+             iss->regfile.set_freg(insn->out_regs[reg], fp_wb_val_); \
+             iss->csr.fp_state_dirty(); \
+         } } while (0)
 #endif
+#define FREG32_SET(reg,val) FREG_SET(reg, val)
 #endif
 #endif

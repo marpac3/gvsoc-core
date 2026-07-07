@@ -1496,6 +1496,13 @@ static inline void clear_fflags(Iss *iss, unsigned long int fflags)
 // updates the fflags from fenv exceptions
 static inline void update_fflags_fenv(Iss *iss)
 {
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    // A trapped FP instruction (reserved rounding mode, see setFFRoundingMode)
+    // must not update fflags: the RTL kills every side effect of an
+    // instruction that raised illegal-instruction.
+    if (iss->exec.has_exception)
+        return;
+#endif
     int ex = fetestexcept(FE_ALL_EXCEPT);
     int flags = !!(ex & FE_INEXACT) |
                 !!(ex & FE_UNDERFLOW) << 1 |
@@ -1722,6 +1729,16 @@ static inline unsigned long int setFFRoundingMode(Iss *s, unsigned long int mode
         printf("Unimplemented roudning mode nearest ties to max magnitude");
         exit(-1);
         break;
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+    case 5:
+    case 6:
+        // Reserved static rounding modes: illegal-instruction on the RTL
+        // (RISC-V F spec, rm 101/110 reserved). The FP op still runs after
+        // the raise; its writeback and fflags update are suppressed by the
+        // has_exception guards (macros.h FREG_SET, update_fflags_fenv).
+        s->exception.raise(s->exec.current_insn, ISS_EXCEPT_ILLEGAL);
+        break;
+#endif
     case 7:
     {
         switch (s->csr.fcsr.frm)
@@ -1742,6 +1759,15 @@ static inline unsigned long int setFFRoundingMode(Iss *s, unsigned long int mode
             printf("Unimplemented roudning mode nearest ties to max magnitude");
             exit(-1);
             break;
+#ifdef CONFIG_GVSOC_ISS_CV32E40P
+        case 5:
+        case 6:
+        case 7:
+            // Dynamic rounding with a reserved frm value: illegal-instruction
+            // on the RTL (frm 101/110/111 reserved on use).
+            s->exception.raise(s->exec.current_insn, ISS_EXCEPT_ILLEGAL);
+            break;
+#endif
         }
     }
     }
