@@ -89,7 +89,10 @@ void Cv32e40pCsr::build_cv32e40p()
     auto *cfg = this->iss.top.get_js_config();
 
     // PULP custom CSRs (0xCD0-0xCD2)
-    // These exist when COREV_PULP=1 (all PULP configs). Read-only via CSR instructions.
+    // These exist when COREV_PULP=1 (all PULP configs). The RTL decoder
+    // (cv32e40p_decoder.sv, CSR_UHARTID/CSR_PRIVLV/CSR_ZFINX cases) raises
+    // illegal-instruction on any write op to them, so write_illegal (not a
+    // silently-ignored write mask) is the correct model.
     bool pulpv2 = cfg->get_child_bool("pulpv2");
     if (pulpv2)
     {
@@ -100,16 +103,25 @@ void Cv32e40pCsr::build_cv32e40p()
         // 0xCD0 UHARTID — duplicate of mhartid, user-mode readable
         iss_reg_t uhartid_val = cfg_int_or(cfg, "mhartid_value", 0);
         this->declare_csr(&this->uhartid, "uhartid", 0xCD0, uhartid_val);
-        this->uhartid.set_write_mask(0);  // read-only
+        this->uhartid.set_write_mask(0);
+        this->uhartid.write_illegal = true;
 
         // 0xCD1 PRIVLV — current privilege level (M-mode only → always 3)
         this->declare_csr(&this->privlv, "privlv", 0xCD1, 3);
-        this->privlv.set_write_mask(0);  // read-only
+        this->privlv.set_write_mask(0);
+        this->privlv.write_illegal = true;
 
-        // 0xCD2 ZFINX — returns 1 when FPU=1 && ZFINX=1, else 0
-        iss_reg_t zfinx_val = (this->m_zfinx) ? 1 : 0;
-        this->declare_csr(&this->zfinx_csr, "zfinx", 0xCD2, zfinx_val);
-        this->zfinx_csr.set_write_mask(0);  // read-only
+        // 0xCD2 ZFINX — reads 1 when ZFINX=1, 0 when FPU=0. The RTL decoder
+        // rejects it when FPU=1 && ZFINX=0 (illegal even on reads), so in
+        // that config it must stay undeclared: the unsupported-CSR path then
+        // raises illegal-instruction, matching the RTL.
+        if (!this->m_fpu_in_isa)
+        {
+            iss_reg_t zfinx_val = (this->m_zfinx) ? 1 : 0;
+            this->declare_csr(&this->zfinx_csr, "zfinx", 0xCD2, zfinx_val);
+            this->zfinx_csr.set_write_mask(0);
+            this->zfinx_csr.write_illegal = true;
+        }
     }
 
     // Read-only info registers

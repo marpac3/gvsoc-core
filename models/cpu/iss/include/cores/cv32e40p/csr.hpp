@@ -64,7 +64,7 @@ public:
     // PULP custom CSRs (0xCD0-0xCD2)
     CsrReg uhartid;     // 0xCD0 — duplicate of mhartid (user-mode readable)
     CsrReg privlv;      // 0xCD1 — current privilege level
-    CsrReg zfinx_csr;   // 0xCD2 — ZFINX indicator (1 if FPU+ZFINX, else 0)
+    CsrReg zfinx_csr;   // 0xCD2 — ZFINX indicator; undeclared (illegal) when FPU=1 && ZFINX=0
 
 private:
     int64_t mcycle_offset = 0;
