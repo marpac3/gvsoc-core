@@ -1177,7 +1177,10 @@ static inline void hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg
 // CV32E40P CoreV2 encodes the hwloop immediate as a word offset (x4); the legacy
 // PulpV2 default was a halfword offset (x2). The else-branch keeps x2 for the
 // other targets.
-#ifdef CONFIG_GVSOC_ISS_CV32E40P
+/* On iss_v2 this header is only pulled in by the CoreV2 subset, so the
+ * CV32E40P word-offset encoding applies there unconditionally. A v2 port
+ * of the legacy halfword encoding must introduce its own gate here. */
+#if defined(CONFIG_GVSOC_ISS_CV32E40P) || defined(CONFIG_GVSOC_ISS_V2)
 #define COREV_HWLOOP_IMM_SHIFT 2
 #else
 #define COREV_HWLOOP_IMM_SHIFT 1
