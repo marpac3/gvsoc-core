@@ -23,6 +23,18 @@
 #ifndef __CPU_ISS_COREV_HPP
 #define __CPU_ISS_COREV_HPP
 
+/* Self-sufficient like rv32i.hpp: iss_v2 emits ISA-subset includes in
+ * subset order, so this header cannot rely on rv32i.hpp having pulled
+ * in the macros before it. */
+#ifdef CONFIG_GVSOC_ISS_V2
+#include "cpu/iss/include/isa_lib/int.h"
+#include "cpu/iss_v2/include/isa_lib/macros.h"
+#else
+#include "cpu/iss/include/iss_core.hpp"
+#include "cpu/iss/include/isa_lib/int.h"
+#include "cpu/iss/include/isa_lib/macros.h"
+#endif
+
 #define COREV_HWLOOP_LPSTART0 0
 #define COREV_HWLOOP_LPEND0 1
 #define COREV_HWLOOP_LPCOUNT0 2
@@ -35,6 +47,11 @@
 #define COREV_HWLOOP_LPEND(x) (COREV_HWLOOP_LPEND0 + (x)*4)
 #define COREV_HWLOOP_LPCOUNT(x) (COREV_HWLOOP_LPCOUNT0 + (x)*4)
 
+/* v1-only hardware-loop machinery: the stub handler and the exec/csr-side
+ * state it drives do not exist on iss_v2, where the dispatch loop calls
+ * iss->hwloop.check() natively and the lp_* handlers below program the
+ * Hwloop module directly. */
+#ifndef CONFIG_GVSOC_ISS_V2
 static inline iss_reg_t corev_hwloop_check_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
     // Check now is the instruction has been replayed to know if it is the first
@@ -128,6 +145,37 @@ static inline void corev_hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, i
     corev_hwloop_set_start(iss, insn, index, start);
     corev_hwloop_set_count(iss, insn, index, count);
 }
+#else
+/* iss_v2 versions of the CV32E40P hwloop setters, programming the Hwloop
+ * module directly. Same RTL-grounded semantics as the v1 path: lpstart/lpend
+ * bits [1:0] are hardwired 0, and the core loops back from the LAST BODY
+ * instruction, i.e. the module's end must match LPEND - 4 (the v2 check()
+ * compares the just-executed pc against the stored end).
+ * NOTE: the v2 Hwloop module is also the CSR read path (get_end), so a raw
+ * LPEND csrr reads back LPEND - 4 here — known bring-up divergence, to be
+ * fixed by a CV32E40P Hwloop personality keeping the architectural value. */
+static inline void corev_hwloop_set_start(Iss *iss, iss_insn_t *insn, int index, iss_reg_t start)
+{
+    iss->hwloop.set_start(index, start & ~(iss_reg_t)0x3);
+}
+
+static inline void corev_hwloop_set_end(Iss *iss, iss_insn_t *insn, int index, iss_reg_t end)
+{
+    iss->hwloop.set_end(index, (end & ~(iss_reg_t)0x3) - 4);
+}
+
+static inline void corev_hwloop_set_count(Iss *iss, iss_insn_t *insn, int index, iss_reg_t count)
+{
+    iss->hwloop.set_count(index, count);
+}
+
+static inline void corev_hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg_t start, iss_reg_t end, iss_reg_t count)
+{
+    corev_hwloop_set_end(iss, insn, index, end);
+    corev_hwloop_set_start(iss, insn, index, start);
+    corev_hwloop_set_count(iss, insn, index, count);
+}
+#endif
 
 /* Dead cv_* scalar handlers removed — the decoder (isa_cv32e40pv2.py) uses
  * p_* names from the PulpV2 section below. The cv_* versions were unused
@@ -1104,6 +1152,7 @@ static inline iss_reg_t hwloop_check_exec(Iss *iss, iss_insn_t *insn, iss_reg_t 
 {
     return corev_hwloop_check_exec(iss, insn, pc);
 }
+#endif
 
 static inline void hwloop_set_start(Iss *iss, iss_insn_t *insn, int index, iss_reg_t start)
 {
@@ -1124,7 +1173,6 @@ static inline void hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg
 {
     corev_hwloop_set_all(iss, insn, index, start, end, count);
 }
-#endif
 
 // CV32E40P CoreV2 encodes the hwloop immediate as a word offset (x4); the legacy
 // PulpV2 default was a halfword offset (x2). The else-branch keeps x2 for the
@@ -1137,41 +1185,32 @@ static inline void hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, iss_reg
 
 static inline iss_reg_t lp_starti_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     hwloop_set_start(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT));
-#endif
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t lp_endi_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     hwloop_set_end(iss, insn, UIM_GET(0), pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT));
-#endif
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t lp_count_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     iss->regfile.memcheck_branch_reg(REG_IN(0));
 
     hwloop_set_count(iss, insn, UIM_GET(0), REG_GET(0));
-#endif
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t lp_counti_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     hwloop_set_count(iss, insn, UIM_GET(0), UIM_GET(1));
-#endif
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t lp_setup_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     iss->regfile.memcheck_branch_reg(REG_IN(0));
 
     int index = UIM_GET(0);
@@ -1180,21 +1219,18 @@ static inline iss_reg_t lp_setup_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     iss_reg_t end = pc + (UIM_GET(1) << COREV_HWLOOP_IMM_SHIFT);
 
     hwloop_set_all(iss, insn, index, start, end, count);
-#endif
 
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t lp_setupi_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
     int index = UIM_GET(0);
     iss_reg_t count = UIM_GET(1);
     iss_reg_t start = pc + insn->size;
     iss_reg_t end = pc + (UIM_GET(2) << COREV_HWLOOP_IMM_SHIFT);
 
     hwloop_set_all(iss, insn, index, start, end, count);
-#endif
 
     return iss_insn_next(iss, insn, pc);
 }
@@ -1289,7 +1325,15 @@ static inline iss_reg_t SW_RR_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 
 static inline iss_reg_t p_elw_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-#ifndef CONFIG_GVSOC_ISS_V2
+#ifdef CONFIG_GVSOC_ISS_V2
+    // No event-load support on this core's LSU: behave as a plain load
+    // (same fallback as pulp_v2.hpp when CONFIG_GVSOC_ISS_ELW is absent).
+    iss->regfile.memcheck_access_reg(REG_IN(0));
+    if (iss->lsu.load_signed<int32_t>(insn, REG_GET(0) + SIM_GET(0), 4, REG_OUT(0)))
+    {
+        return pc;
+    }
+#else
     iss->regfile.memcheck_branch_reg(REG_IN(0));
 
     iss_handle_elw(iss, insn, pc, REG_GET(0) + SIM_GET(0), 4, REG_OUT(0));

@@ -453,4 +453,10 @@ class CoreV2(IsaSubset):
             Instr('cv.cplxmul.i.div8',  Format_RRRR, '0101011 ----- ----- 110 ----- 1111011', L='cv.cplxmul.i.div8'),
             Instr('cv.pack',            Format_R,    '1111000 ----- ----- 000 ----- 1111011', L='cv.pack'),
         ]
-        super().__init__(name='pulpv2', instrs=instrs)
+        # The handler header is declared here (like PulpV2 does) so iss_v2
+        # builds, which only pull in what each subset/module declares, get
+        # the exec functions. v1 builds already include it via the core's
+        # class.hpp; the double include is guarded.
+        super().__init__(name='pulpv2', instrs=instrs, includes=[
+            '<cpu/iss/include/isa/corev.hpp>',
+        ])
