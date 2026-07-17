@@ -24,7 +24,7 @@ Core::Core(Iss &iss)
 {
     this->iss.traces.new_trace("core", &this->trace, vp::DEBUG);
 
-    // Initialize the mstatus write mask so that WPRI fields are preserved.
+    // Initialize the mstatus write mask so that WPRI fields are preserved
 #if defined(CONFIG_GVSOC_ISS_CORE_MSTATUS_WRITE_MASK)
     // The core recipe owns the whole mstatus policy: its mask applies as-is
     // and none of the generic refinements below (vector/user state, forced

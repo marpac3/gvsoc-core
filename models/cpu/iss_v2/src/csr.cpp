@@ -1174,6 +1174,9 @@ bool iss_csr_read(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t *value)
         if (status)
         {
             iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
+#if 0
+      triggerException_cause(iss, iss->currentPc, EXCEPTION_ILLEGAL_INSTR, ECAUSE_ILL_INSTR);
+#endif
             return true;
         }
     }
@@ -1298,6 +1301,9 @@ bool iss_csr_write(Iss *iss, iss_insn_t *insn, iss_reg_t reg, iss_reg_t value)
 #endif
 
     iss->csr.trace.force_warning("Accessing unsupported CSR (id: 0x%x, name: %s)\n", reg, iss_csr_name(iss, reg));
+#if 0
+  triggerException_cause(iss, iss->currentPc, EXCEPTION_ILLEGAL_INSTR, ECAUSE_ILL_INSTR);
+#endif
 
     return true;
 }
