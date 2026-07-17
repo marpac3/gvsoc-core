@@ -37,6 +37,10 @@
 
 static inline iss_reg_t flw_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#if defined(CONFIG_GVSOC_ISS_FP_STATE_DIRTY)
+    // Opt-in: FP loads dirty mstatus.FS (see iss_v2 isa_lib/macros.h).
+    iss->csr.fp_state_dirty();
+#endif
     if (iss->lsu.load_float<uint32_t>(insn, REG_GET(0) + SIM_GET(0), 4, REG_OUT(0)))
     {
         return pc;
@@ -47,6 +51,9 @@ static inline iss_reg_t flw_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 static inline iss_reg_t flw_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
     iss->lsu.stack_access_check(REG_IN(0), REG_GET(0) + SIM_GET(0));
+#if defined(CONFIG_GVSOC_ISS_FP_STATE_DIRTY)
+    iss->csr.fp_state_dirty();
+#endif
     if (iss->lsu.load_float_perf<uint32_t>(insn, REG_GET(0) + SIM_GET(0), 4, REG_OUT(0)))
     {
         return pc;
