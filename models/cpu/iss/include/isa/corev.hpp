@@ -150,10 +150,10 @@ static inline void corev_hwloop_set_all(Iss *iss, iss_insn_t *insn, int index, i
  * module directly. Same RTL-grounded semantics as the v1 path: lpstart/lpend
  * bits [1:0] are hardwired 0, and the core loops back from the LAST BODY
  * instruction, i.e. the module's end must match LPEND - 4 (the v2 check()
- * compares the just-executed pc against the stored end).
- * NOTE: the v2 Hwloop module is also the CSR read path (get_end), so a raw
- * LPEND csrr reads back LPEND - 4 here — known bring-up divergence, to be
- * fixed by a CV32E40P Hwloop personality keeping the architectural value. */
+ * compares the just-executed pc against the stored end). The architectural
+ * LPEND is kept in the csr personality (hwloop_lpend), which is also the
+ * CSR read path: re-deriving it from the module as get_end() + 4 would
+ * read back 4 instead of 0 on a never-programmed loop. */
 static inline void corev_hwloop_set_start(Iss *iss, iss_insn_t *insn, int index, iss_reg_t start)
 {
     iss->hwloop.set_start(index, start & ~(iss_reg_t)0x3);
@@ -161,6 +161,7 @@ static inline void corev_hwloop_set_start(Iss *iss, iss_insn_t *insn, int index,
 
 static inline void corev_hwloop_set_end(Iss *iss, iss_insn_t *insn, int index, iss_reg_t end)
 {
+    iss->csr.hwloop_lpend[index] = end & ~(iss_reg_t)0x3;
     iss->hwloop.set_end(index, (end & ~(iss_reg_t)0x3) - 4);
 }
 
