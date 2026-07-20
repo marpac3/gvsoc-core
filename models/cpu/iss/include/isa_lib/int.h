@@ -1711,8 +1711,10 @@ static inline unsigned long int setFFRoundingMode(Iss *s, unsigned long int mode
         fesetround(FE_UPWARD);
         break;
     case 4:
-        printf("Unimplemented roudning mode nearest ties to max magnitude");
-        exit(-1);
+        // fenv has no RMM: round to nearest, and set flexfloat_rmm so that ties
+        // are rounded away from zero.
+        fesetround(FE_TONEAREST);
+        flexfloat_rmm = 1;
         break;
     case 7:
     {
@@ -1731,8 +1733,8 @@ static inline unsigned long int setFFRoundingMode(Iss *s, unsigned long int mode
             fesetround(FE_UPWARD);
             break;
         case 4:
-            printf("Unimplemented roudning mode nearest ties to max magnitude");
-            exit(-1);
+            fesetround(FE_TONEAREST);
+            flexfloat_rmm = 1;
             break;
         }
     }
@@ -1742,6 +1744,7 @@ static inline unsigned long int setFFRoundingMode(Iss *s, unsigned long int mode
 
 static inline void restoreFFRoundingMode(unsigned long int mode)
 {
+    flexfloat_rmm = 0;
     fesetround(mode);
 }
 
