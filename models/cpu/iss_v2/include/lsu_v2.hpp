@@ -190,9 +190,12 @@ private:
     bool handle_req_response(LsuReqEntry *entry);
     void handle_req_end(LsuReqEntry *entry);
     // Re-arm and re-issue ``entry`` for the second beat of a misaligned
-    // access. Returns true if a second beat was fired (entry still in
-    // flight); false if the entry was aligned (no second beat needed).
+    // access. Returns false when beat 1 completed inline: the entry is then
+    // freed, and the caller must retire the held instruction.
     bool fire_misaligned_second(LsuReqEntry *entry);
+    // Retire a held instruction as the response path does, when beat 1
+    // completed inline.
+    void retire_held_insn(InsnEntry *insn_entry);
 
 protected:
     Iss &iss;

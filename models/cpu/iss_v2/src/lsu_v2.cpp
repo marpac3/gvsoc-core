@@ -209,10 +209,18 @@ vp::IoRespAck LsuV2::data_response(vp::Block *__this, vp::IoReq *req)
 
     // First beat of a misaligned access just landed: fire beat 1 and
     // keep the insn held. Do NOT touch next_retire_cycle yet — that is
-    // reserved for the *final* retire when beat 1 lands.
+    // reserved for the *final* retire when beat 1 lands. If beat 1
+    // completes inline, the entry is already freed and the insn is retired here.
     if (entry->misaligned_size != 0)
     {
-        _this->fire_misaligned_second(entry);
+        InsnEntry *held = entry->insn_entry;
+        if (!_this->fire_misaligned_second(entry))
+        {
+            _this->retire_held_insn(held);
+            int64_t now = _this->iss.clock.get_cycles();
+            if (_this->next_retire_cycle < now + 1)
+                _this->next_retire_cycle = now + 1;
+        }
         return vp::IO_RESP_ACCEPTED;
     }
 
@@ -531,21 +539,23 @@ bool LsuV2::data_req_misaligned(iss_insn_t *insn, iss_addr_t addr, int size,
     // data2 so fire_misaligned_second can recover the high bytes.
 
     // Peek the entry that data_req_aligned is about to allocate (head of
-    // the free list). After the call returns, this same entry is the
-    // in-flight one — `data_req_aligned` keeps it in flight on the
-    // sync-DONE / GRANTED / DENIED-held paths, all of which return
-    // ``false`` (no stall). Only the LSU-full path (``true``) leaves no
-    // entry allocated, so the misaligned bookkeeping is committed on
-    // ``false``.
+    // the free list) and arm the beat-1 state before issuing beat 0. A beat 0
+    // that completes inline with zero latency frees the entry during the call,
+    // and arming it afterwards would leave a second beat on a free entry.
     LsuReqEntry *entry = this->req_entry_first;
 
-    // For writes, snapshot the full register value into data2 BEFORE
-    // data_req_aligned overwrites entry->data with the truncated beat-0
-    // payload. fire_misaligned_second will shift this down for beat 1.
-    uint64_t full_write_data = 0;
-    if (opcode == vp::IoReqOpcode::WRITE && entry != nullptr)
+    if (entry != nullptr)
     {
-        full_write_data = this->iss.regfile.get_reg(reg);
+        entry->misaligned_size        = size1;
+        entry->misaligned_addr        = addr1;
+        entry->misaligned_byte_offset = size0;
+        if (opcode == vp::IoReqOpcode::WRITE)
+        {
+            // Save the full register value in data2 before data_req_aligned
+            // puts the beat-0 payload in entry->data. fire_misaligned_second
+            // shifts it down for beat 1.
+            entry->data2 = this->iss.regfile.get_reg(reg);
+        }
     }
 
     this->issuing_misaligned = true;
@@ -553,25 +563,41 @@ bool LsuV2::data_req_misaligned(iss_insn_t *insn, iss_addr_t addr, int size,
                                           is_signed, reg, reg2);
     this->issuing_misaligned = false;
 
-    if (!stalled && entry != nullptr)
+    if (stalled && entry != nullptr)
     {
-        entry->misaligned_size        = size1;
-        entry->misaligned_addr        = addr1;
-        entry->misaligned_byte_offset = size0;
-        if (opcode == vp::IoReqOpcode::WRITE)
+        // Beat 0 was not issued and the entry is still free, so disarm it. This
+        // cannot happen while data_req_aligned allocates the entry peeked above.
+        entry->misaligned_size        = 0;
+        entry->misaligned_byte_offset = 0;
+    }
+    else if (!stalled && opcode == vp::IoReqOpcode::WRITE)
+    {
+        // The second half occupies the execute stage one more cycle, so
+        // the next instruction starts one cycle later. A misaligned load
+        // needs nothing here: its user already waits for the second half.
+        if (this->iss.cfg.lsu_misaligned_store_stall)
         {
-            entry->data2 = full_write_data;
-            // The second half occupies the execute stage one more cycle, so
-            // the next instruction starts one cycle later. A misaligned load
-            // needs nothing here: its user already waits for the second half.
-            if (this->iss.cfg.lsu_misaligned_store_stall)
-            {
-                this->iss.exec.stall_cycles_inc(1);
-            }
+            this->iss.exec.stall_cycles_inc(1);
         }
     }
 
     return stalled;
+}
+
+void LsuV2::retire_held_insn(InsnEntry *insn_entry)
+{
+    // Unlike the response path, do not wait for next_retire_cycle, since the
+    // entry that would carry the deferral is already freed. This is only correct
+    // with nb_outstanding 1, where no other retire can happen in the same cycle.
+#ifdef CONFIG_GVSOC_ISS_REGFILE_SCOREBOARD
+    // Release the destination registers next cycle (load-use stall), as the
+    // response path does.
+    iss_insn_t *insn = this->iss.exec.get_insn(insn_entry);
+    this->iss.exec.schedule_scoreboard_release(insn->sb_out_reg_mask);
+    this->iss.exec.insn_terminate(insn_entry, /*defer_scoreboard_release=*/true);
+#else
+    this->iss.exec.insn_terminate(insn_entry);
+#endif
 }
 
 bool LsuV2::fire_misaligned_second(LsuReqEntry *entry)
@@ -663,10 +689,17 @@ void LsuV2::task_handle(Iss *iss, Task *task)
     }
 
     // First beat of a misaligned access just timed out: fire beat 1.
-    // No retire-slot accounting yet — beat 1 will do its own.
+    // No retire-slot accounting yet — beat 1 will do its own, unless it
+    // completes inline, in which case the held insn is retired here.
     if (entry->misaligned_size != 0)
     {
-        iss->lsu.fire_misaligned_second(entry);
+        InsnEntry *held = entry->insn_entry;
+        if (!iss->lsu.fire_misaligned_second(entry))
+        {
+            iss->lsu.retire_held_insn(held);
+            if (iss->lsu.next_retire_cycle < cur + 1)
+                iss->lsu.next_retire_cycle = cur + 1;
+        }
         return;
     }
 
