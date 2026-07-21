@@ -194,6 +194,7 @@ void PrefetchSingleLine::fetch_ahead(iss_addr_t insn_addr, iss_opcode_t opcode, 
 #endif
 
     this->buffer_start_addr = phys_addr & ~(CONFIG_GVSOC_ISS_PREFETCH_SIZE - 1);
+    this->buffer_valid = true;
     // The instruction which is executing has left the buffer: keep it, in case
     // it is fetched again before it completes (it may be stalled for a
     // register).
@@ -306,6 +307,7 @@ int PrefetchSingleLine::fill(iss_addr_t addr)
 {
     iss_addr_t aligned_addr = addr & ~(CONFIG_GVSOC_ISS_PREFETCH_SIZE - 1);
     this->buffer_start_addr = aligned_addr;
+    this->buffer_valid = true;
 #ifdef CONFIG_GVSOC_ISS_LSU_V2
     this->ahead_insn_addr = -1;
 #endif
@@ -441,8 +443,10 @@ bool PrefetchSingleLine::fetch(iss_reg_t addr)
 
     unsigned int index = phys_addr - this->buffer_start_addr;
 
-    // If it is entirely within the buffer, get the opcode and decode it.
-    if (likely(index <= CONFIG_GVSOC_ISS_PREFETCH_SIZE - sizeof(iss_opcode_t)))
+    // If the buffer is valid and the instruction is entirely within it, get the
+    // opcode and decode it.
+    if (likely(this->buffer_valid &&
+               index <= CONFIG_GVSOC_ISS_PREFETCH_SIZE - sizeof(iss_opcode_t)))
     {
         insn->opcode = *(iss_opcode_t *)&this->data[index];
 #ifdef CONFIG_GVSOC_ISS_LSU_V2
@@ -456,17 +460,22 @@ bool PrefetchSingleLine::fetch(iss_reg_t addr)
         return true;
     }
 
-    // Otherwise, fake a refill
+    // Otherwise, refill. An empty buffer must take the fill() branch of
+    // fetch_refill whatever the index, so move the index out of the line.
     this->current_pc = addr;
+    if (!this->buffer_valid)
+        index = CONFIG_GVSOC_ISS_PREFETCH_SIZE;
     return this->fetch_refill(insn, phys_addr, index);
 }
 
 
 void PrefetchSingleLine::flush()
 {
-    // Since the address is an unsigned int, the next index will be negative and will force the prefetcher
-    // to refill
+    // Empty the buffer (see buffer_valid) and drop the instruction of the last
+    // refill, so that fetch_refill does not take it as already fetched.
     this->buffer_start_addr = -1;
+    this->buffer_valid = false;
+    this->prefetch_insn = NULL;
 #ifdef CONFIG_GVSOC_ISS_LSU_V2
     this->ahead_insn_addr = -1;
 #endif

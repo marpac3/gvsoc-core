@@ -102,6 +102,11 @@ private:
     // Start address of the prefetch buffer. Can be -1 to indicate it is empty
     iss_addr_t buffer_start_addr;
 
+    // False when the buffer is empty. Setting buffer_start_addr to -1 is not
+    // enough, since the unsigned index of fetch() is then addr + 1, which falls
+    // in the buffer for the first bytes of the address space.
+    bool buffer_valid = false;
+
     // Request used for sending fetch request to the fetch interface
     vp::IoReq fetch_req;
 
