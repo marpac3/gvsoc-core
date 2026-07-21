@@ -168,6 +168,21 @@ void ExecInOrder::exec_instr(vp::Block *__this, vp::ClockEvent *event)
 
     iss->exec.trace.msg(vp::Trace::LEVEL_TRACE, "Handling instruction with fast handler\n");
 
+    // Honor a pending front-end flush in the FAST path too (the slow handler
+    // already does at exec_instr_check_all): after an external redirect
+    // (gvsoc_engine_set_pc sets pending_flush) the very next dispatch can be the
+    // fast handler, which otherwise fetches the redirected PC through the STALE
+    // prefetch line (PrefetchSingleLine::fetch's in-window fast-path reads
+    // this->data[index] without a refill) and decodes garbage bytes -> a bogus
+    // next-PC at the vector entry. Flushing the prefetch (buffer_start_addr=-1)
+    // and insn cache here forces a real refill+redecode at current_insn.
+    if (unlikely(iss->exec.pending_flush))
+    {
+        iss->prefetch.flush();
+        iss->insn_cache.flush();
+        iss->exec.pending_flush = false;
+    }
+
     // Leave now in case the core is retained and we are only executing tasks
     if (unlikely(iss->exec.handle_tasks())) return;
 
