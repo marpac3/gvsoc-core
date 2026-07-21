@@ -168,6 +168,16 @@ void ExecInOrder::exec_instr(vp::Block *__this, vp::ClockEvent *event)
 
     iss->exec.trace.msg(vp::Trace::LEVEL_TRACE, "Handling instruction with fast handler\n");
 
+    // Apply a pending flush from icache_flush here too, as exec_instr_check_all
+    // does, so that this handler does not decode the next instruction from the
+    // stale prefetch line.
+    if (unlikely(iss->exec.pending_flush))
+    {
+        iss->prefetch.flush();
+        iss->insn_cache.flush();
+        iss->exec.pending_flush = false;
+    }
+
     // Leave now in case the core is retained and we are only executing tasks
     if (unlikely(iss->exec.handle_tasks())) return;
 
