@@ -223,16 +223,18 @@ static inline void iss_handle_elw(Iss *iss, iss_insn_t *insn, iss_reg_t pc, iss_
 
 static inline iss_reg_t cv_clipr_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
-    int low = -REG_GET(1) - 1;
-    int high = REG_GET(1);
+    // Spec (instruction_set_extensions.rst:786): rs2' = rs2 & 0x7FFFFFFF
+    int high = REG_GET(1) & 0x7fffffff;
+    int low = -high - 1;
     REG_SET(0, LIB_CALL3(lib_CLIP, REG_GET(0), low, high));
     return iss_insn_next(iss, insn, pc);
 }
 
 static inline iss_reg_t cv_clipur_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+    // Spec (instruction_set_extensions.rst:794): rs2' = rs2 & 0x7FFFFFFF
     int low = 0;
-    int high = REG_GET(1);
+    int high = REG_GET(1) & 0x7fffffff;
     REG_SET(0, LIB_CALL3(lib_CLIP, REG_GET(0), low, high));
     return iss_insn_next(iss, insn, pc);
 }
