@@ -176,33 +176,36 @@ static inline unsigned int lib_MAC_SH_SH_NR(Iss *s, unsigned int a, unsigned int
 static inline unsigned int lib_MAC_ZL_ZL_NR(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift) { return ((uint32_t)(a + ZL(b) * ZL(c))) >> shift; }
 static inline unsigned int lib_MAC_ZH_ZH_NR(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift) { return ((uint32_t)(a + ZH(b) * ZH(c))) >> shift; }
 
+/* The rounding constant takes part in the 32-bit wrap of the accumulate sum
+ * (RI5CY-family mult datapath); adding it after the wrap flips the result
+ * sign when a + product + round crosses the 32-bit boundary. */
 static inline unsigned int lib_MAC_SL_SL_NR_R(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
 {
-    int32_t result = (int32_t)(a + SL(b) * SL(c));
+    uint32_t result = a + SL(b) * SL(c);
     if (shift > 0)
-        result = (result + (1ULL << (shift - 1))) >> shift;
-    return result;
+        result += 1u << (shift - 1);
+    return ((int32_t)result) >> shift;
 }
 static inline unsigned int lib_MAC_SH_SH_NR_R(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
 {
-    int32_t result = (int32_t)(a + SH(b) * SH(c));
+    uint32_t result = a + SH(b) * SH(c);
     if (shift > 0)
-        result = (result + (1ULL << (shift - 1))) >> shift;
-    return result;
+        result += 1u << (shift - 1);
+    return ((int32_t)result) >> shift;
 }
 static inline unsigned int lib_MAC_ZL_ZL_NR_R(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
 {
-    uint32_t result = (uint32_t)(a + ZL(b) * ZL(c));
+    uint32_t result = a + (uint32_t)ZL(b) * ZL(c);
     if (shift > 0)
-        result = (result + (1ULL << (shift - 1))) >> shift;
-    return result;
+        result += 1u << (shift - 1);
+    return result >> shift;
 }
 static inline unsigned int lib_MAC_ZH_ZH_NR_R(Iss *s, unsigned int a, unsigned int b, unsigned int c, unsigned int shift)
 {
-    uint32_t result = (uint32_t)(a + ZH(b) * ZH(c));
+    uint32_t result = a + (uint32_t)ZH(b) * ZH(c);
     if (shift > 0)
-        result = (result + (1ULL << (shift - 1))) >> shift;
-    return result;
+        result += 1u << (shift - 1);
+    return result >> shift;
 }
 
 static inline unsigned int lib_MSU_SL_SL(Iss *s, unsigned int a, unsigned int b, unsigned int c) { return a - SL(b) * SL(c); }
