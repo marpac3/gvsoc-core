@@ -37,13 +37,34 @@ static inline iss_reg_t c_unimp_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
     return pc;
 }
 
+// The ISA table decodes the reserved RVC encodings with the regular handlers.
+// With CONFIG_GVSOC_ISS_RVC_STRICT these handlers call c_reserved_exec, which
+// raises an illegal instruction exception as iss_exec_insn_illegal does.
+static inline iss_reg_t c_reserved_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
+{
+    iss->decode.trace.msg("Executing illegal instruction\n");
+    iss->exception.raise(pc, ISS_EXCEPT_ILLEGAL);
+#ifdef CONFIG_GVSOC_ISS_V2
+    iss->exec.insn_stall();
+#endif
+    return pc;
+}
+
 static inline iss_reg_t c_addi4spn_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x1FE0) == 0)  /* nzuimm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     return addi_exec(iss, insn, pc);
 }
 
 static inline iss_reg_t c_addi4spn_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x1FE0) == 0)  /* nzuimm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     iss->timing.event_rvc_account(1);
     return addi_exec(iss, insn, pc);
 }
@@ -127,11 +148,19 @@ static inline iss_reg_t c_li_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 
 static inline iss_reg_t c_addi16sp_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x107C) == 0)  /* nzimm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     return addi_exec(iss, insn, pc);
 }
 
 static inline iss_reg_t c_addi16sp_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x107C) == 0)  /* nzimm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     iss->timing.event_rvc_account(1);
     return addi_exec(iss, insn, pc);
 }
@@ -149,11 +178,19 @@ static inline iss_reg_t c_jalr_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 
 static inline iss_reg_t c_lui_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x107C) == 0)  /* imm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     return lui_exec(iss, insn, pc);
 }
 
 static inline iss_reg_t c_lui_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x107C) == 0)  /* imm == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     iss->timing.event_rvc_account(1);
     return lui_exec(iss, insn, pc);
 }
@@ -281,22 +318,38 @@ static inline iss_reg_t c_slli_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 
 static inline iss_reg_t c_lwsp_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x0F80) == 0)  /* rd == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     return lw_exec_fast(iss, insn, pc);
 }
 
 static inline iss_reg_t c_lwsp_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x0F80) == 0)  /* rd == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     iss->timing.event_rvc_account(1);
     return lw_exec(iss, insn, pc);
 }
 
 static inline iss_reg_t c_jr_exec_fast(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x0F80) == 0)  /* rs1 == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     return jalr_exec_fast(iss, insn, pc);
 }
 
 static inline iss_reg_t c_jr_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    if ((insn->opcode & 0x0F80) == 0)  /* rs1 == 0 is reserved */
+        return c_reserved_exec(iss, insn, pc);
+#endif
     iss->timing.event_rvc_account(1);
     return jalr_exec(iss, insn, pc);
 }
@@ -327,22 +380,29 @@ static inline iss_reg_t c_ebreak_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
     iss->timing.event_rvc_account(1);
 
-    if ((iss->csr.dcsr >> 15) & 1)
+    // Same as ebreak_exec in rv32i.hpp, except for the semihosting check, which
+    // is only defined on the 32-bit encoding.
+    if (iss->exec.debug_mode)
     {
-        // iss->dbgunit.set_halt_mode(true, 1);
+        // An ebreak in debug mode goes back to the debug handler.
+        return iss->irq.debug_handler;
     }
-    else
-    {
-        iss->exception.raise(pc, ISS_EXCEPT_BREAKPOINT);
-    }
-    return iss_insn_next(iss, insn, pc);
+    iss->exception.raise(pc, ISS_EXCEPT_BREAKPOINT);
+    return pc;
 }
 
 static inline iss_reg_t c_sbreak_exec(Iss *iss, iss_insn_t *insn, iss_reg_t pc)
 {
+#ifdef CONFIG_GVSOC_ISS_RVC_STRICT
+    // 0x8002 is c.jr with rs1 = 0, a reserved encoding. The ISA table decodes
+    // it as the PULP c.sbreak, so c_jr_exec never checks it and the trap must
+    // be raised here.
+    return c_reserved_exec(iss, insn, pc);
+#else
     iss->timing.event_rvc_account(1);
     // iss->dbgunit.set_halt_mode(true, 3);
     return iss_insn_next(iss, insn, pc);
+#endif
 }
 
 #endif
