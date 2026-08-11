@@ -303,14 +303,11 @@ void ExecInOrder::exec_instr_check_all(vp::Block *__this, vp::ClockEvent *event)
         _this->switch_to_fast_mode();
     }
 
-    if (!_this->skip_irq_check)
-    {
-        _this->iss.irq.check();
-    }
-    else
-    {
-        _this->skip_irq_check = false;
-    }
+    // The one-shot async gate (skip_irq_check) is consumed inside check():
+    // synchronous debug conditions (execute-address triggers) are evaluated
+    // on every boundary, even when interrupt checking is suppressed for the
+    // dispatch (external lockstep stepping, gdb resume).
+    _this->iss.irq.check();
 
     // Leave now in case the core is retained and we are only executing tasks
     if (_this->handle_tasks()) return;
