@@ -87,6 +87,28 @@ bool LsuV2::data_req_virtual(iss_insn_t *insn, iss_addr_t addr, int size,
         if (this->iss.mmu.load_virt_to_phys(addr, phys_addr, use_mem_array)) return false;
     }
 
+    /* Self-modifying code: a store into an already-decoded page stales its
+     * decoded instructions. Queue a flush (deferred to the next dispatch
+     * boundary by icache_flush - flushing here would free the page holding
+     * the store insn itself). Rare event, full flush is fine.
+     * Placed AFTER translation: insn-cache pages are keyed on physical
+     * addresses (InsnCache::page_get), so the virtual address would be the
+     * wrong key on an MMU-enabled core. The second lookup only runs when
+     * the access actually crosses a page (one hash per store on the hot
+     * path). Known latent gap, accepted: the LsuV2::atomic opcodes (SC/AMO)
+     * also write memory but no iss_v2 core wires them today - extend the
+     * opcode test when one does. */
+    if (opcode == vp::IoReqOpcode::WRITE && size > 0)
+    {
+        iss_addr_t last = phys_addr + (iss_addr_t)size - 1;
+        if (this->iss.insn_cache.covers(phys_addr) ||
+            (((phys_addr ^ last) >> INSN_PAGE_BITS) != 0 &&
+             this->iss.insn_cache.covers(last)))
+        {
+            this->iss.exec.icache_flush();
+        }
+    }
+
     if (this->io_req_denied || this->data_req(insn, addr, size, opcode, is_signed, reg, reg2))
     {
         this->iss.exec.insn_stall();
