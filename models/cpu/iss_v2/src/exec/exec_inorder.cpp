@@ -223,7 +223,13 @@ void ExecInOrder::exec_instr(vp::Block *__this, vp::ClockEvent *event)
         // Hardware-loop redirect: if pc matches a registered loop end
         // and its counter > 0, decrement and redirect to the loop start.
         // The default HwloopEmpty variant inlines to a no-op.
-        next_pc = iss->hwloop.check(pc, next_pc);
+        // A trapping loop-end instruction is killed before the loop
+        // update on the RTL (the exception wins), so the count must not
+        // move when the handler raised.
+        if (likely(!iss->exec.has_exception))
+        {
+            next_pc = iss->hwloop.check(pc, next_pc);
+        }
 
         iss->exec.current_insn = next_pc;
 
@@ -360,8 +366,12 @@ void ExecInOrder::exec_instr_check_all(vp::Block *__this, vp::ClockEvent *event)
             return;
         }
 
-        // Hardware-loop redirect: see fast-path equivalent above.
-        next_pc = iss->hwloop.check(pc, next_pc);
+        // Hardware-loop redirect: see fast-path equivalent above (including
+        // the trapping-insn carve-out).
+        if (likely(!_this->has_exception))
+        {
+            next_pc = iss->hwloop.check(pc, next_pc);
+        }
 
         _this->current_insn = next_pc;
 
