@@ -1973,27 +1973,33 @@ static inline int64_t lib_flexfloat_cvt_w_ff_round(Iss *s, unsigned long int a, 
     unsigned long int new_round = round == 4 ? 2 : round;
     old = setFFRoundingMode(s, new_round);
     FF_INIT_1(a, e, m)
-    if (round == 4)
+    if (round == 4 && ff_a.value == ff_a.value /* !NaN */)
     {
-        if (ff_a.value < 0)
+        // RMM gives trunc(|x| + 0.5) with the sign of x. new_round puts the host in RDN,
+        // so the addition cannot round up to the next integer. A result that differs
+        // from x raises the inexact flag, and a result out of range raises the invalid
+        // flag alone (RISC-V F 11.7). A NaN takes the generic path below.
+        neg = ff_a.value < 0;
+        double mag = neg ? -ff_a.value : ff_a.value;
+        double t = trunc(mag + 0.5);
+        double lim = neg ? 2147483648.0 : 2147483647.0;
+        int32_t result_rmm;
+        if (t > lim)
         {
-            ff_a.value = -ff_a.value;
-            neg = true;
+            set_fflags(s, 1ULL << 4);  /* invalid only */
+            result_rmm = neg ? INT32_MIN : INT32_MAX;
         }
-        ff_a.value += 0.5f;
+        else
+        {
+            double rounded = neg ? -t : t;
+            result_rmm = (int32_t)rounded;
+            if (rounded != ff_a.value)
+                set_fflags(s, 1ULL << 0);  /* inexact */
+        }
+        restoreFFRoundingMode(old);
+        return iss_get_signed_value(result_rmm, 32);
     }
     int32_t result_int = double_to_int(s, ff_a.value);
-    if (neg)
-    {
-        /* Two's-complement asymmetry: |INT32_MIN| = 2^31 is not representable
-         * as a positive int32, so the magnitude above saturated to INT32_MAX
-         * and negating it gives INT32_MIN+1 (off by one). A negative value
-         * whose magnitude reaches/overflows 2^31 must saturate to INT32_MIN. */
-        if (nearbyint(ff_a.value) >= 2147483648.0)
-            result_int = INT32_MIN;
-        else
-            result_int = -result_int;
-    }
     restoreFFRoundingMode(old);
     return iss_get_signed_value(result_int, 32);
 }
@@ -2004,15 +2010,45 @@ static inline int64_t lib_flexfloat_cvt_wu_ff_round(Iss *s, unsigned long int a,
     unsigned long int new_round = round == 4 ? 2 : round;
     old = setFFRoundingMode(s, new_round);
     FF_INIT_1(a, e, m)
-    if (round == 4)
+    if (round == 4 && ff_a.value == ff_a.value /* !NaN */)
     {
-        /* Unsigned conversion of a negative value saturates to 0, with the
-         * proper flags, inside double_to_uint - do NOT negate the input on
-         * this path (there is no sign to re-apply afterwards, unlike the
-         * signed sibling). Only the non-negative RMM magnitude needs the
-         * +0.5 nudge. */
-        if (ff_a.value >= 0)
-            ff_a.value += 0.5f;
+        // Same as lib_flexfloat_cvt_w_ff_round. A negative x that rounds to a
+        // nonzero value is out of range, and gives 0 with the invalid flag alone.
+        // A NaN takes the generic path below.
+        double v = ff_a.value;
+        int32_t result_rmm;
+        if (v < 0)
+        {
+            double t = trunc(-v + 0.5);
+            if (t > 0)
+            {
+                set_fflags(s, 1ULL << 4);  /* out of range */
+                result_rmm = 0;
+            }
+            else
+            {
+                result_rmm = 0;            /* rounds to 0 */
+                if (v != 0.0)
+                    set_fflags(s, 1ULL << 0);
+            }
+        }
+        else
+        {
+            double t = trunc(v + 0.5);
+            if (t > 4294967295.0)
+            {
+                set_fflags(s, 1ULL << 4);
+                result_rmm = (int32_t)UINT32_MAX;
+            }
+            else
+            {
+                result_rmm = (int32_t)(uint32_t)t;
+                if (t != v)
+                    set_fflags(s, 1ULL << 0);
+            }
+        }
+        restoreFFRoundingMode(old);
+        return (int64_t)result_rmm;
     }
     int32_t result_int = double_to_uint(s, ff_a.value);
     restoreFFRoundingMode(old);
@@ -2090,7 +2126,11 @@ static inline long int lib_flexfloat_cvt_ff_ff_round(Iss *s, unsigned long int a
 {
     int old = setFFRoundingMode(s, round);
     FF_INIT_1(a, es, ms)
+    // Collect the flags that flexfloat_sanitize raises in ff_cast: a narrowing
+    // conversion can be inexact, overflow or underflow.
+    feclearexcept(FE_ALL_EXCEPT);
     ff_cast(&ff_res, &ff_a, (flexfloat_desc_t){ed, md});
+    update_fflags_fenv(s);
     restoreFFRoundingMode(old);
     return flexfloat_get_bits(&ff_res);
 }
