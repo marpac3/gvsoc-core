@@ -294,8 +294,12 @@ void flexfloat_sanitize(flexfloat_t *a)
     exp = flexfloat_exp(a);
 
 #ifdef FLEXFLOAT_ROUNDING
-    // In these cases no rounding is needed
-    if (!(exp == INF_EXP  || a->desc.frac_bits == NUM_BITS_FRAC))
+    // No rounding is needed for Inf and NaN, or for a full-width target. A value
+    // that already overflows the target is not rounded either, so that it reaches
+    // the overflow branch below: rounded, it could pack as Inf and be taken for an
+    // exact infinity, which raises no overflow (IEEE 754 7.4).
+    if (!(exp == INF_EXP || exp >= flexfloat_inf_exp(a->desc)
+          || a->desc.frac_bits == NUM_BITS_FRAC))
     {
 #ifdef FLEXFLOAT_FLAGS
         // Inexact results raise an exception
@@ -406,11 +410,9 @@ void flexfloat_sanitize(flexfloat_t *a)
     }
     else if(exp == INF_EXP) // Inf
     {
-#ifdef FLEXFLOAT_FLAGS
-        // Raise the proper overflow exception, unless a DIV/0 exception had occured
-        if (!fetestexcept(FE_DIVBYZERO))
-            feraiseexcept(FE_OVERFLOW | FE_INEXACT);
-#endif
+        // An infinite backend value comes from an infinite operand or from a
+        // division by zero. It is exact and raises no overflow (IEEE 754 7.4).
+        // An overflow of the target format is handled by the next branch.
         exp = inf_exp;
     }
     else if(exp >= inf_exp) // Out of bounds for target format: overflow
@@ -709,6 +711,14 @@ INLINE void ff_fma(flexfloat_t *dest, const flexfloat_t *a, const flexfloat_t *b
     assert((dest->desc.exp_bits == a->desc.exp_bits) && (dest->desc.frac_bits == a->desc.frac_bits) &&
            (a->desc.exp_bits == b->desc.exp_bits) && (a->desc.frac_bits == b->desc.frac_bits) &&
            (b->desc.exp_bits == c->desc.exp_bits) && (b->desc.frac_bits == c->desc.frac_bits));
+    #ifdef FLEXFLOAT_FLAGS
+    // inf * 0 raises the invalid flag even when the addend is a quiet NaN.
+    // IEEE 754 7.2 leaves this case to the implementation and the host fma
+    // raises nothing, but the RISC-V F extension requires the flag.
+    if ((a->value == 0.0 && isinf(b->value)) ||
+        (isinf(a->value) && b->value == 0.0))
+        feraiseexcept(FE_INVALID);
+    #endif
     #ifdef FLEXFLOAT_ROUNDING
     if (a->desc.frac_bits < NUM_BITS_FRAC)
     {
@@ -753,6 +763,12 @@ INLINE void ff_fnma(flexfloat_t *dest, const flexfloat_t *a, const flexfloat_t *
     assert((dest->desc.exp_bits == a->desc.exp_bits) && (dest->desc.frac_bits == a->desc.frac_bits) &&
            (a->desc.exp_bits == b->desc.exp_bits) && (a->desc.frac_bits == b->desc.frac_bits) &&
            (b->desc.exp_bits == c->desc.exp_bits) && (b->desc.frac_bits == c->desc.frac_bits));
+    #ifdef FLEXFLOAT_FLAGS
+    // inf * 0 raises the invalid flag even with a quiet NaN addend, see ff_fma.
+    if ((a->value == 0.0 && isinf(b->value)) ||
+        (isinf(a->value) && b->value == 0.0))
+        feraiseexcept(FE_INVALID);
+    #endif
     #ifdef FLEXFLOAT_ROUNDING
     if (a->desc.frac_bits < NUM_BITS_FRAC)
     {

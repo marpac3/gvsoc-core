@@ -1503,15 +1503,18 @@ static inline int32_t double_to_int(Iss *s, double dbl_i)
 {
     double dbl = nearbyint(dbl_i);
 
-    if (dbl != dbl_i)
-    {
-        set_fflags(s, 1ULL << 0);
-    }
-
     if (dbl < 2.0 * (INT32_MAX / 2 + 1))
     {                               // NO OVERFLOW
         if (ceil(dbl) >= INT32_MIN) // NO UNDERFLOW
+        {
+            // Only a valid conversion can be inexact. A NaN or an out of range
+            // value raises the invalid flag alone (IEEE 754 7.2).
+            if (dbl != dbl_i)
+            {
+                set_fflags(s, 1ULL << 0);
+            }
             return (int32_t)dbl;
+        }
         else // UNDERFLOW
         {
             set_fflags(s, 1ULL << 4);
@@ -1530,15 +1533,18 @@ static inline uint32_t double_to_uint(Iss *s, double dbl_i)
 {
     double dbl = nearbyint(dbl_i);
 
-    if (dbl != dbl_i)
-    {
-        set_fflags(s, 1ULL << 0);
-    }
-
     if (dbl < 2.0 * (UINT32_MAX / 2 + 1))
     {                       // NO OVERFLOW
         if (ceil(dbl) >= 0) // NO UNDERFLOW
+        {
+            // Only a valid conversion can be inexact. A NaN or an out of range
+            // value raises the invalid flag alone (IEEE 754 7.2).
+            if (dbl != dbl_i)
+            {
+                set_fflags(s, 1ULL << 0);
+            }
             return (uint32_t)dbl;
+        }
         else // UNDERFLOW
         {
             set_fflags(s, 1ULL << 4);
@@ -1557,15 +1563,18 @@ static inline int64_t double_to_long(Iss *s, double dbl_i)
 {
     double dbl = nearbyint(dbl_i);
 
-    if (dbl != dbl_i)
-    {
-        set_fflags(s, 1ULL << 0);
-    }
-
     if (dbl < 2.0 * (INT64_MAX / 2 + 1))
     {                               // NO OVERFLOW
         if (ceil(dbl) >= INT64_MIN) // NO UNDERFLOW
+        {
+            // Only a valid conversion can be inexact. A NaN or an out of range
+            // value raises the invalid flag alone (IEEE 754 7.2).
+            if (dbl != dbl_i)
+            {
+                set_fflags(s, 1ULL << 0);
+            }
             return (int64_t)dbl;
+        }
         else // UNDERFLOW
         {
             set_fflags(s, 1ULL << 4);
@@ -1584,15 +1593,18 @@ static inline uint64_t double_to_ulong(Iss *s, double dbl_i)
 {
     double dbl = nearbyint(dbl_i);
 
-    if (dbl != dbl_i)
-    {
-        set_fflags(s, 1ULL << 0);
-    }
-
     if (dbl < 2.0 * (UINT64_MAX / 2 + 1))
     {                       // NO OVERFLOW
         if (ceil(dbl) >= 0) // NO UNDERFLOW
+        {
+            // Only a valid conversion can be inexact. A NaN or an out of range
+            // value raises the invalid flag alone (IEEE 754 7.2).
+            if (dbl != dbl_i)
+            {
+                set_fflags(s, 1ULL << 0);
+            }
             return (uint64_t)dbl;
+        }
         else // UNDERFLOW
         {
             set_fflags(s, 1ULL << 4);
@@ -1897,6 +1909,12 @@ static inline unsigned long int lib_flexfloat_min(Iss *s, unsigned long int a, u
 #ifdef OLD
     FF_EXEC_2(s, ff_min, a, b, e, m)
 #else
+    // A signaling NaN input raises the invalid flag, as in lib_flexfloat_max,
+    // since RISC-V fmin is the IEEE 754-2019 minimumNumber operation.
+    if (IsNan(a, e, m) == 2 || IsNan(b, e, m) == 2)
+    {
+        set_fflags(s, 1ULL << 4);
+    }
     int Nan_a = IsNan(a, e, m);
     int Nan_b = IsNan(b, e, m);
     unsigned long int Nan_Q = (((1ULL << e) - 1) << m) | ((unsigned long int)1ULL << (m - 1));
@@ -2005,7 +2023,11 @@ static inline long int lib_flexfloat_cvt_ff_w_round(Iss *s, int64_t a, uint8_t e
 {
     int old = setFFRoundingMode(s, round);
     flexfloat_t ff_a;
+    // Collect the inexact flag that flexfloat_sanitize raises when the integer
+    // does not fit in the mantissa, as lib_flexfloat_cvt_ff_x_round does.
+    feclearexcept(FE_ALL_EXCEPT);
     ff_init_int(&ff_a, a & 0xffffffff, (flexfloat_desc_t){e, m});
+    update_fflags_fenv(s);
     restoreFFRoundingMode(old);
     return flexfloat_get_bits(&ff_a);
 }
@@ -2014,7 +2036,10 @@ static inline unsigned long int lib_flexfloat_cvt_ff_wu_round(Iss *s, int64_t a,
 {
     int old = setFFRoundingMode(s, round);
     flexfloat_t ff_a;
+    // Collect the inexact flag, see lib_flexfloat_cvt_ff_w_round.
+    feclearexcept(FE_ALL_EXCEPT);
     ff_init_long(&ff_a, (uint32_t)a & 0xffffffff, (flexfloat_desc_t){e, m});
+    update_fflags_fenv(s);
     restoreFFRoundingMode(old);
     return flexfloat_get_bits(&ff_a);
 }
@@ -2041,7 +2066,10 @@ static inline long int lib_flexfloat_cvt_ff_l_round(Iss *s, int64_t a, uint8_t e
 {
     int old = setFFRoundingMode(s, round);
     flexfloat_t ff_a;
+    // Collect the inexact flag, see lib_flexfloat_cvt_ff_w_round.
+    feclearexcept(FE_ALL_EXCEPT);
     ff_init_long(&ff_a, a, (flexfloat_desc_t){e, m});
+    update_fflags_fenv(s);
     restoreFFRoundingMode(old);
     return flexfloat_get_bits(&ff_a);
 }
@@ -2050,7 +2078,10 @@ static inline unsigned long int lib_flexfloat_cvt_ff_lu_round(Iss *s, uint64_t a
 {
     int old = setFFRoundingMode(s, round);
     flexfloat_t ff_a;
+    // Collect the inexact flag, see lib_flexfloat_cvt_ff_w_round.
+    feclearexcept(FE_ALL_EXCEPT);
     ff_init_long_long_unsigned(&ff_a, a, (flexfloat_desc_t){e, m});
+    update_fflags_fenv(s);
     restoreFFRoundingMode(old);
     return flexfloat_get_bits(&ff_a);
 }
