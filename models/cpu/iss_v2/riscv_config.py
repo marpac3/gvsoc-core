@@ -71,6 +71,11 @@ class RiscvConfig(Config):
         "(the response stands for the grant of a core which is only granted such an access "
         "when it completes, like a PULP core behind its demux for anything but the TCDM)."
     ))
+    lsu_misaligned_store_stall: bool = cfg_field(default=False, dump=True, desc=(
+        "True if a misaligned store keeps the execute stage one more cycle for its second "
+        "half, so the next instruction starts one cycle later (RI5CY: the second access of a "
+        "misaligned store is issued from EX while the next instruction waits in ID)."
+    ))
     power_insn_groups: list[PowerSourceConfig] = cfg_field(default_factory=list, init=False, desc=(
         "Per-instruction-group dynamic energy tables; the list index matches the isa "
         "power group set with set_power_group. Empty = per-instruction power off."

@@ -561,6 +561,13 @@ bool LsuV2::data_req_misaligned(iss_insn_t *insn, iss_addr_t addr, int size,
         if (opcode == vp::IoReqOpcode::WRITE)
         {
             entry->data2 = full_write_data;
+            // The second half occupies the execute stage one more cycle, so
+            // the next instruction starts one cycle later. A misaligned load
+            // needs nothing here: its user already waits for the second half.
+            if (this->iss.cfg.lsu_misaligned_store_stall)
+            {
+                this->iss.exec.stall_cycles_inc(1);
+            }
         }
     }
 
