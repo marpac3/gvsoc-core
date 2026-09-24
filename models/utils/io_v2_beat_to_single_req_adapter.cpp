@@ -67,6 +67,11 @@ IoV2BeatToSingleReqAdapter::IoV2BeatToSingleReqAdapter(vp::ComponentConf &config
         this->max_read_bursts = (int)this->cfg.max_read_bursts;
     }
 
+    if (this->cfg.read_lane_width > 0)
+    {
+        this->read_lanes.resize(std::max(1, (int)(this->beat_width / this->cfg.read_lane_width)));
+    }
+
     this->new_slave_port("input", &this->in);
     this->new_master_port("output", &this->out);
 }
@@ -283,8 +288,14 @@ vp::IoRespAck IoV2BeatToSingleReqAdapter::resp_handler(vp::Block *__this, vp::Io
     if (!self->issued.empty() && self->issued.front() == req)
     {
         self->issued.pop_front();
+        int64_t lane_wait = 0;
+        if (!self->issued_lane_wait.empty())
+        {
+            lane_wait = self->issued_lane_wait.front();
+            self->issued_lane_wait.pop_front();
+        }
         self->complete_read_beat(req, req->get_resp_status(),
-                                 req->get_full_latency());
+                                 req->get_full_latency() + lane_wait);
         self->issue_pending_sub_reads();
         self->reschedule_fsm();
         return vp::IO_RESP_ACCEPTED;
@@ -385,6 +396,9 @@ bool IoV2BeatToSingleReqAdapter::issue_one_sub_read()
     b.issued_beats++;
     this->read_issue_last_cycle = this->clock.get_cycles();
 
+    int64_t lane_wait = this->read_lanes.empty() ? 0
+        : this->read_lanes_push(b.base_addr + offset, beat, this->clock.get_cycles());
+
     // Once fully issued, the burst leaves the issue chain for the drain chain.
     // Do this BEFORE completing an inline DONE so completion finds it there.
     if (b.issued_beats == b.nb_beats)
@@ -399,12 +413,14 @@ bool IoV2BeatToSingleReqAdapter::issue_one_sub_read()
         // no async sub-read may be outstanding ahead of this one.
         this->traces.assert(this->issued.empty(),
             "SingleReq slave mixed inline and async responses within a burst");
-        this->complete_read_beat(r, r->get_resp_status(), r->get_full_latency());
+        this->complete_read_beat(r, r->get_resp_status(),
+            r->get_full_latency() + lane_wait);
     }
     else
     {
         // GRANTED: track the req in issue order, awaiting the async resp().
         this->issued.push_back(r);
+        this->issued_lane_wait.push_back(lane_wait);
     }
     return true;
 }
@@ -431,7 +447,68 @@ void IoV2BeatToSingleReqAdapter::issue_pending_sub_reads()
     {
         return;
     }
+    // Both lane queues need room (read_lane_width); the fsm ticks every cycle
+    // while bursts remain, so it comes back once one frees.
+    if (!this->read_lanes.empty() && this->read_lanes_ready(now) > now)
+    {
+        return;
+    }
     this->issue_one_sub_read();
+}
+
+
+int64_t IoV2BeatToSingleReqAdapter::read_lanes_ready(int64_t now)
+{
+    // An entry leaves its queue on the cycle the lane takes it; the queue holds
+    // 2 entries.
+    int64_t ready = now;
+    for (ReadLane &lane : this->read_lanes)
+    {
+        while (!lane.takes.empty() && lane.takes.front() < now)
+        {
+            lane.takes.pop_front();
+        }
+        if (lane.takes.size() >= 2)
+        {
+            ready = std::max(ready, lane.takes[lane.takes.size() - 2] + 1);
+        }
+    }
+    return ready;
+}
+
+
+int64_t IoV2BeatToSingleReqAdapter::read_lanes_push(uint64_t addr, uint64_t size, int64_t now)
+{
+    int nb_lanes = (int)this->read_lanes.size();
+    int lane_width = this->cfg.read_lane_width;
+    // Lanes the beat uses (all of them if it covers or crosses the beat).
+    int first = 0, last = nb_lanes - 1;
+    if (size > 0 && size < (uint64_t)this->beat_width)
+    {
+        uint64_t in_beat = addr % this->beat_width;
+        if (in_beat + size <= (uint64_t)this->beat_width)
+        {
+            first = (int)(in_beat / lane_width);
+            last = (int)((in_beat + size - 1) / lane_width);
+        }
+    }
+
+    // The entry is in the lane queue from the next cycle and taken as soon as
+    // the lane can: one cycle after a real entry, two after an empty one.
+    int64_t wait = 0;
+    for (int i = 0; i < nb_lanes; i++)
+    {
+        ReadLane &lane = this->read_lanes[i];
+        bool used = i >= first && i <= last;
+        int64_t take = std::max(now + 1, lane.next_free);
+        lane.next_free = take + (used ? 1 : 2);
+        lane.takes.push_back(take);
+        if (used)
+        {
+            wait = std::max(wait, take - (now + 1));
+        }
+    }
+    return wait;
 }
 
 
@@ -1002,6 +1079,12 @@ void IoV2BeatToSingleReqAdapter::reset(bool active)
             r->free();
         }
         this->issued.clear();
+        this->issued_lane_wait.clear();
+        for (ReadLane &lane : this->read_lanes)
+        {
+            lane.next_free = 0;
+            lane.takes.clear();
+        }
         // Scheduled-but-not-yet-emitted read beats are sub-reads the adapter still
         // owns (not yet handed to the consumer), so free them here too.
         for (auto &rb : this->read_pending)

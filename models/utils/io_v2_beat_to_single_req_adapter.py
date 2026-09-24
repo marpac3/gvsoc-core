@@ -61,17 +61,28 @@ class IoV2BeatToSingleReqAdapterConfig(Config):
         "a burst every cycle. Only the first beat of a burst pays it, the other beats "
         "stream at one per cycle."
     ))
+    read_lane_width: int = cfg_field(default=0, dump=True, desc=(
+        "Width in bytes of the memory lanes a read beat is spread over (8 = two 64-bit "
+        "lanes for a 128-bit beat), as in the PULP axi2mem with one outstanding read per "
+        "lane: every read beat puts an entry in the 2-entry queue of each lane, real on "
+        "the lanes it uses, empty on the others; a lane takes its next entry one cycle "
+        "after a real one and two after an empty one, and a beat is accepted only when "
+        "both queues have room. So narrow reads on one lane go one every two cycles, "
+        "full beats one per cycle. 0 (default) issues a read beat every cycle whatever "
+        "its size."
+    ))
 
 
 class IoV2BeatToSingleReqAdapter(Component):
 
     def __init__(self, parent: Component, name: str, beat_width: int,
                  max_read_bursts: int = 4, read_latency: int = 0, write_latency: int = 0,
-                 write_burst_half_cycles: int = 0):
+                 write_burst_half_cycles: int = 0, read_lane_width: int = 0):
         super().__init__(parent, name, config=IoV2BeatToSingleReqAdapterConfig(
             beat_width=beat_width, max_read_bursts=max_read_bursts,
             read_latency=read_latency, write_latency=write_latency,
-            write_burst_half_cycles=write_burst_half_cycles))
+            write_burst_half_cycles=write_burst_half_cycles,
+            read_lane_width=read_lane_width))
         self.set_component('utils.io_v2_beat_to_single_req_adapter')
         self._beat_width = beat_width
 

@@ -97,6 +97,7 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <vp/vp.hpp>
 #include <vp/itf/io_v2.hpp>
 #include <vp/debug_mem.hpp>
@@ -270,6 +271,24 @@ private:
     // at most one sub-read per cycle so a *series* of bandwidth routers does not
     // each compound its per-request wait (which would halve throughput).
     int64_t read_issue_last_cycle = -1;
+
+    // Read lanes (cfg.read_lane_width), after the PULP axi2mem: every read beat
+    // puts one entry in the 2-entry queue of each lane, a real one on the lanes
+    // it uses and an empty one on the others. A lane takes its next entry one
+    // cycle after a real one (its data is back) but two cycles after an empty
+    // one, and a beat is only accepted when both queues have room. Per lane: the
+    // cycle it can take its next entry, and the cycles at which the entries
+    // still in its queue are taken.
+    struct ReadLane { int64_t next_free = 0; std::deque<int64_t> takes; };
+    std::vector<ReadLane> read_lanes;
+    // Cycles each async sub-read waited in its lane queue, in issue order (added
+    // to its response latency).
+    std::deque<int64_t> issued_lane_wait;
+    // First cycle a read beat can enter the lane queues (now if they have room).
+    int64_t read_lanes_ready(int64_t now);
+    // Queue one read beat in the lanes; returns how long its data is delayed by
+    // the lane queues compared to an idle bridge.
+    int64_t read_lanes_push(uint64_t addr, uint64_t size, int64_t now);
 
     // Read bursts in flight, split into two in-order chains so each chain's head
     // is the one to act on — no scanning (mirrors the HW: an address generator
