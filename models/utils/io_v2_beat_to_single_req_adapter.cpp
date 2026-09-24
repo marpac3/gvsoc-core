@@ -67,6 +67,11 @@ IoV2BeatToSingleReqAdapter::IoV2BeatToSingleReqAdapter(vp::ComponentConf &config
         this->max_read_bursts = (int)this->cfg.max_read_bursts;
     }
 
+    if (this->cfg.max_sub_reads > 0)
+    {
+        this->max_sub_outstanding = (int)this->cfg.max_sub_reads;
+    }
+
     if (this->cfg.read_lane_width > 0)
     {
         this->read_lanes.resize(std::max(1, (int)(this->beat_width / this->cfg.read_lane_width)));

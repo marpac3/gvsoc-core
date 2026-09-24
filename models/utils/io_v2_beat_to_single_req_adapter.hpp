@@ -322,9 +322,9 @@ private:
     // back on the front one (in-order, asserted); the beat framing is derived
     // from the front burst's completed_beats cursor, not stored per sub-read.
     std::deque<vp::IoReq *> issued;
-    // Outstanding-window depth: with one-per-cycle issuance the window must cover
-    // the downstream round-trip latency to sustain 1 beat/cycle.
-    int max_sub_outstanding = 1;
+    // Outstanding-window depth (cfg.max_sub_reads): with one-per-cycle issuance the
+    // window must cover the downstream round-trip latency to sustain 1 beat/cycle.
+    int max_sub_outstanding = 32;
 
     // True when a sub-read was DENIED by the downstream: no further sub-reads are
     // issued until retry(), where it is re-generated from the burst cursor (the

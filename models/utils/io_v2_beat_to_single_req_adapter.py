@@ -46,6 +46,13 @@ class IoV2BeatToSingleReqAdapterConfig(Config):
         "delivered upstream). The read request channel is back-pressured beyond "
         "this — the HW r_id-FIFO analogue."
     ))
+    max_sub_reads: int = cfg_field(default=32, dump=True, desc=(
+        "Maximum number of beat-sized sub-reads outstanding downstream. The default "
+        "covers the round-trip latency so reads stream at one beat per cycle. 1 "
+        "models a bridge holding a single request per port, like the RTL axi2mem, "
+        "which also keeps the responses in order behind a fabric reaching targets "
+        "of different latencies."
+    ))
     read_latency: int = cfg_field(default=0, dump=True, desc=(
         "Cycles added to every read response beat, on top of the latency reported by the "
         "downstream. It is a pipeline delay: it shifts the response stream without "
@@ -76,10 +83,11 @@ class IoV2BeatToSingleReqAdapterConfig(Config):
 class IoV2BeatToSingleReqAdapter(Component):
 
     def __init__(self, parent: Component, name: str, beat_width: int,
-                 max_read_bursts: int = 4, read_latency: int = 0, write_latency: int = 0,
+                 max_read_bursts: int = 4, max_sub_reads: int = 32, read_latency: int = 0, write_latency: int = 0,
                  write_burst_half_cycles: int = 0, read_lane_width: int = 0):
         super().__init__(parent, name, config=IoV2BeatToSingleReqAdapterConfig(
             beat_width=beat_width, max_read_bursts=max_read_bursts,
+            max_sub_reads=max_sub_reads,
             read_latency=read_latency, write_latency=write_latency,
             write_burst_half_cycles=write_burst_half_cycles,
             read_lane_width=read_lane_width))
