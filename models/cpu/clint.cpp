@@ -37,7 +37,8 @@
  * bffc mtime hi
  */
 
-#define RESOLUTION 100000
+// Default mtime frequency (10 MHz), used when the "frequency" property is not set
+#define DEFAULT_FREQUENCY 10000000
 
 #define MSIP_BASE 0x0
 #define MTIMECMP_BASE 0x4000
@@ -77,6 +78,8 @@ private:
     int nb_cores;
     std::vector<msip_t> msip;
     int64_t start_time;
+    // Period of one mtime tick in picoseconds
+    int64_t resolution;
 
     std::vector<vp::ClockEvent *> event;
 };
@@ -131,7 +134,7 @@ vp::IoReqStatus Clint::req(vp::Block *__this, vp::IoReq *req)
 
 uint64_t Clint::get_mtime()
 {
-    uint64_t value = (this->time.get_time() - this->start_time) / RESOLUTION;
+    uint64_t value = (this->time.get_time() - this->start_time) / this->resolution;
     this->trace.msg(vp::Trace::LEVEL_INFO, "Get mtime (value: %ld)\n", value);
     return value;
 }
@@ -154,7 +157,7 @@ void Clint::check_event()
 {
     for (int i=0; i<this->nb_cores; i++)
     {
-        uint64_t diff = (this->mtimecmp[i] - this->get_mtime()) * RESOLUTION / this->clock.get_period();
+        uint64_t diff = (this->mtimecmp[i] - this->get_mtime()) * this->resolution / this->clock.get_period();
 
         if (diff > 0)
         {
@@ -245,6 +248,14 @@ Clint::Clint(vp::ComponentConf &config)
     new_slave_port("input", &this->input_itf);
 
     this->nb_cores = this->get_js_config()->get_child_int("nb_cores");
+
+    // mtime tick frequency, e.g. the RTC frequency when the CLINT time base is the RTC
+    int64_t frequency = this->get_js_config()->get_child_int("frequency");
+    if (frequency == 0)
+    {
+        frequency = DEFAULT_FREQUENCY;
+    }
+    this->resolution = 1000000000000LL / frequency;
 
     this->event.resize(this->nb_cores);
     this->mtimecmp.resize(this->nb_cores);

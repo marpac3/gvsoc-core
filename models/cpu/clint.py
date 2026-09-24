@@ -18,13 +18,23 @@ import gvsoc.systree
 
 class Clint(gvsoc.systree.Component):
 
-    def __init__(self, parent, name, nb_cores=1):
+    def __init__(self, parent, name, nb_cores=1, frequency=10000000):
+        """
+        Parameters
+        ----------
+        nb_cores: int
+            Number of harts (one msip / mtimecmp pair each).
+        frequency: int
+            Frequency of the mtime counter in Hz (e.g. the RTC frequency when the
+            CLINT time base is a real-time clock).
+        """
 
         super(Clint, self).__init__(parent, name)
 
         self.set_component('cpu.clint')
 
         self.add_property('nb_cores', nb_cores)
+        self.add_property('frequency', frequency)
 
     def i_INPUT(self) -> gvsoc.systree.SlaveItf:
         return gvsoc.systree.SlaveItf(self, 'input', signature='io')
