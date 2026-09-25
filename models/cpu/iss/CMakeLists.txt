@@ -75,7 +75,6 @@ function(generate_isa)
     vp_model_compile_definitions(
         NAME ${GEN_ISA_NAME}
         DEFINITIONS
-        "-DRISCV=1"
         "-DRISCY"
         )
 

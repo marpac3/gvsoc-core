@@ -203,7 +203,6 @@ class RiscvCommon(st.Component):
             self.add_c_flags(cflags)
 
         self.add_c_flags([
-            "-DRISCV=1",
             "-DRISCY",
             "-fno-strict-aliasing",
         ])

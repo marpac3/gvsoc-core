@@ -948,20 +948,12 @@ static inline unsigned int lib_VEC_SHUFFLEI3_SCI_8(Iss *s, unsigned int a, unsig
 
 static inline unsigned int lib_VEC_SHUFFLE2_16(Iss *s, unsigned int a, unsigned int b, unsigned int c)
 {
-#ifdef RISCV
     return getShuffleHalf(b & (1ULL << 17) ? a : c, b, 16) | getShuffleHalf(b & (1ULL << 1) ? a : c, b, 0);
-#else
-    return getShuffleHalf(b & (1ULL << 17) ? c : a, b, 16) | getShuffleHalf(b & (1ULL << 1) ? c : a, b, 0);
-#endif
 }
 
 static inline unsigned int lib_VEC_SHUFFLE2_8(Iss *s, unsigned int a, unsigned int b, unsigned int c)
 {
-#ifdef RISCV
     return getShuffleByte(b & (1ULL << 26) ? a : c, b, 24) | getShuffleByte(b & (1ULL << 18) ? a : c, b, 16) | getShuffleByte(b & (1ULL << 10) ? a : c, b, 8) | getShuffleByte(b & (1ULL << 2) ? a : c, b, 0);
-#else
-    return getShuffleByte(b & (1ULL << 26) ? c : a, b, 24) | getShuffleByte(b & (1ULL << 18) ? c : a, b, 16) | getShuffleByte(b & (1ULL << 10) ? c : a, b, 8) | getShuffleByte(b & (1ULL << 2) ? c : a, b, 0);
-#endif
 }
 
 static inline unsigned int lib_VEC_PACK_SC_16(Iss *s, unsigned int a, unsigned int b)
