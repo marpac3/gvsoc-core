@@ -326,6 +326,11 @@ void Decode::decode_pc(iss_insn_t *insn, iss_reg_t pc)
     if (this->decode_opcode(insn, pc, opcode))
     {
         this->trace.msg("Unknown instruction\n");
+        // No decoder item gives the length, so take it from the first parcel
+        // (unprivileged ISA 20191213, section 1.5). The instruction has 16 bits
+        // if C is enabled and the low bits are not 11, otherwise ILEN (32).
+        const bool compressed = (this->iss.csr.misa.value & (1u << 2)) != 0;
+        insn->size = compressed && (opcode & 3) != 3 ? 2 : ISS_OPCODE_MAX_SIZE;
         insn->handler = iss_exec_insn_illegal;
         insn->fast_handler = iss_exec_insn_illegal;
     }
