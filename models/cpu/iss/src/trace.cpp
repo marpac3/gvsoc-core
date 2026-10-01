@@ -336,6 +336,16 @@ static char *iss_trace_dump_reg_value_check(Iss *iss, char *buff, int size, uint
     return buff;
 }
 
+// Convert a floating-point value to double, to print it. The ISA conversion collects the host
+// exception flags into fflags, so restore them: the trace must not change the core state.
+static uint64_t trace_float_to_double(Iss *iss, uint64_t value, int exp, int mant)
+{
+    unsigned int fflags = iss->csr.fcsr.fflags;
+    uint64_t value_64 = LIB_FF_CALL4(lib_flexfloat_cvt_ff_ff_round, value, exp, mant, 11, 52, 0);
+    iss->csr.fcsr.fflags = fflags;
+    return value_64;
+}
+
 static char *dump_vector(Iss *iss, char *buff, int reg, bool is_float, uint8_t *saved_arg)
 {
 #ifdef CONFIG_ISS_HAS_VECTOR
@@ -353,8 +363,8 @@ static char *dump_vector(Iss *iss, char *buff, int reg, bool is_float, uint8_t *
 
         if (is_float && !float_hex)
         {
-            uint64_t value_64 = LIB_FF_CALL4(lib_flexfloat_cvt_ff_ff_round, value,
-                iss->vector.exp, iss->vector.mant, 11, 52, 0);
+            uint64_t value_64 = trace_float_to_double(iss, value, iss->vector.exp,
+                iss->vector.mant);
             buff += sprintf(buff, "%f", *(double *)&value_64);
         }
         else
@@ -394,7 +404,7 @@ static char *dump_float_vector(Iss *iss, char *buff, int full_width, int width, 
         }
         else
         {
-            value_64 = LIB_FF_CALL4(lib_flexfloat_cvt_ff_ff_round, value, exp, mant, 11, 52, 0);
+            value_64 = trace_float_to_double(iss, value, exp, mant);
         }
 
         buff += sprintf(buff, "%f ", *(double *)&value_64);
@@ -405,7 +415,7 @@ static char *dump_float_vector(Iss *iss, char *buff, int full_width, int width, 
 
         for (int i=full_width / width - 1; i>=0; i--)
         {
-            uint64_t value_64 = LIB_FF_CALL4(lib_flexfloat_cvt_ff_ff_round, value >> (i*width), exp, mant, 11, 52, 0);
+            uint64_t value_64 = trace_float_to_double(iss, value >> (i*width), exp, mant);
             buff += sprintf(buff, "%f", *(double *)&value_64);
             if (i != 0)
             {
