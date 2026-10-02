@@ -1970,6 +1970,8 @@ static inline int64_t lib_flexfloat_cvt_w_ff_round(Iss *s, unsigned long int a, 
 {
     int old;
     bool neg = false;
+    if (round == 7)
+        round = s->csr.fcsr.frm;  // dyn is resolved here for the RMM test below
     unsigned long int new_round = round == 4 ? 2 : round;
     old = setFFRoundingMode(s, new_round);
     FF_INIT_1(a, e, m)
@@ -2007,6 +2009,8 @@ static inline int64_t lib_flexfloat_cvt_w_ff_round(Iss *s, unsigned long int a, 
 static inline int64_t lib_flexfloat_cvt_wu_ff_round(Iss *s, unsigned long int a, uint8_t e, uint8_t m, unsigned long int round)
 {
     int old;
+    if (round == 7)
+        round = s->csr.fcsr.frm;  // dyn is resolved here for the RMM test below
     unsigned long int new_round = round == 4 ? 2 : round;
     old = setFFRoundingMode(s, new_round);
     FF_INIT_1(a, e, m)
