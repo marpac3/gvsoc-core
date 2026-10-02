@@ -114,6 +114,19 @@ bool LsuV2::data_req_virtual(iss_insn_t *insn, iss_addr_t addr, int size,
         if (this->iss.mmu.load_virt_to_phys(addr, phys_addr, use_mem_array)) return false;
     }
 
+#ifdef CONFIG_GVSOC_ISS_COHERENT_FETCH
+    // A core without instruction cache executes the code its stores write
+    // without a fence.i, so a store into a decoded page flushes the decoded
+    // instructions. icache_flush defers the flush to the next instruction,
+    // since the store instruction itself can be in that page.
+    if (opcode == vp::IoReqOpcode::WRITE && size > 0
+        && (this->iss.insn_cache.covers(phys_addr)
+            || this->iss.insn_cache.covers(phys_addr + size - 1)))
+    {
+        this->iss.exec.icache_flush();
+    }
+#endif
+
     if (this->io_req_denied || this->data_req(insn, addr, size, opcode, is_signed, reg, reg2))
     {
         this->iss.exec.insn_stall();

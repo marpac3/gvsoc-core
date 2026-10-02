@@ -51,6 +51,8 @@ public:
     void mode_flush();
     inline void insn_init(iss_insn_t *insn, iss_addr_t addr);
     InsnPage *page_get(iss_reg_t paddr);
+    // True when the physical address falls in a page already decoded.
+    inline bool covers(iss_reg_t paddr);
 
     // Take ownership of a macro-instruction expansion table, so that it is
     // freed with the rest of the cache on a flush. The table must come from
@@ -79,6 +81,12 @@ private:
 inline void InsnCache::register_insn_table(iss_insn_t *table)
 {
     this->insn_tables.push_back(table);
+}
+
+inline bool InsnCache::covers(iss_reg_t paddr)
+{
+    auto page = this->pages.find(paddr >> INSN_PAGE_BITS);
+    return page != this->pages.end() && page->second != NULL;
 }
 
 inline iss_insn_t *InsnCache::get_insn(iss_reg_t vaddr)
